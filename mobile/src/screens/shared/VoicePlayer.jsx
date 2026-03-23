@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { Audio } from 'expo-av';
 import { X, Volume2 } from 'lucide-react-native';
+
+// expo-av is not available in Expo Go SDK 55+ — safe dynamic import
+let Audio = null;
+try {
+  Audio = require('expo-av').Audio;
+} catch (e) {
+  console.warn('expo-av not available in this environment');
+}
 
 export default function VoicePlayer({ route, navigation }) {
   const { audioUrl, fromName } = route.params;
@@ -13,9 +20,9 @@ export default function VoicePlayer({ route, navigation }) {
   const API_URL = 'http://10.0.2.2:5000';
 
   useEffect(() => {
-    playAudio();
+    if (Audio) playAudio();  // only attempt if expo-av loaded
     startWaveAnimation();
-    return () => { soundRef.current?.unloadAsync(); };
+    return () => { soundRef.current?.unloadAsync?.(); };
   }, []);
 
   const startWaveAnimation = () => {
@@ -28,6 +35,7 @@ export default function VoicePlayer({ route, navigation }) {
   };
 
   const playAudio = async () => {
+    if (!Audio) return; // expo-av not available in Expo Go
     try {
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       const { sound } = await Audio.Sound.createAsync(
