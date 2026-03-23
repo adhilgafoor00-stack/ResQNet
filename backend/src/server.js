@@ -77,8 +77,8 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/resqne
 mongoose.connect(MONGODB_URI)
   .then(() => {
     console.log('✅ MongoDB connected');
-    server.listen(PORT, () => {
-      console.log(`🚀 ResQNet server running on port ${PORT}`);
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 ResQNet server running on port ${PORT} (all interfaces)`);
       console.log(`📡 Socket.io ready`);
       console.log(`🔧 Demo mode: ${process.env.DEMO_MODE === 'true' ? 'ON (OTP: 1234)' : 'OFF'}`);
     });

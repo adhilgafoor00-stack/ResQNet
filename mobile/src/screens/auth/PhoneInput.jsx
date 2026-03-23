@@ -7,15 +7,19 @@ import { useAuthStore } from '../../store/useStore';
 
 export default function PhoneInput({ navigation }) {
   const [phone, setPhone] = useState('');
-  const { requestOtp, loading, error } = useAuthStore();
+  const [localError, setLocalError] = useState('');
+  const { requestOtp, loading } = useAuthStore();
 
   const handleNext = async () => {
     if (!phone.trim()) return;
+    setLocalError('');
     try {
       await requestOtp(phone.trim());
       navigation.navigate('OTPVerify', { phone: phone.trim() });
     } catch (err) {
-      Alert.alert('Error', err.message);
+      const msg = err.message || 'Could not connect to server. Check your network.';
+      setLocalError(msg);
+      Alert.alert('Login Error', msg);
     }
   };
 
@@ -36,7 +40,7 @@ export default function PhoneInput({ navigation }) {
           autoFocus
         />
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {localError ? <Text style={styles.error}>{localError}</Text> : null}
 
         <TouchableOpacity
           style={[styles.btn, (!phone || loading) && styles.btnDisabled]}

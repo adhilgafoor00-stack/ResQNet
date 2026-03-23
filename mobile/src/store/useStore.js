@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
-export const API_URL = 'http://10.0.2.2:5000'; // Android emulator localhost; change for physical device
+export const API_URL = 'http://10.24.95.131:5000'; // Android emulator localhost; change for physical device
 
 export const api = axios.create({ baseURL: API_URL });
 
@@ -37,7 +37,10 @@ export const useAuthStore = create((set, get) => ({
       await api.post('/api/auth/request-otp', { phone });
       set({ loading: false });
     } catch (err) {
-      const msg = err.response?.data?.error || 'Failed to send OTP';
+      const isNetworkErr = !err.response;
+      const msg = isNetworkErr
+        ? `Cannot connect to server (${API_URL}). Check your network or backend is running.`
+        : (err.response?.data?.error || 'Failed to send OTP');
       set({ loading: false, error: msg });
       throw new Error(msg);
     }
@@ -53,7 +56,10 @@ export const useAuthStore = create((set, get) => ({
       set({ token, user, isAuthenticated: true, loading: false });
       return user;
     } catch (err) {
-      const msg = err.response?.data?.error || 'Invalid OTP';
+      const isNetworkErr = !err.response;
+      const msg = isNetworkErr
+        ? `Cannot reach server. Check your network.`
+        : (err.response?.data?.error || 'Invalid OTP');
       set({ loading: false, error: msg });
       throw new Error(msg);
     }
