@@ -3,11 +3,54 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Vibration, Animated, Dimensions, TextInput, Alert
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { useAuthStore, api } from '../../store/useStore';
 import { connectSocket, listenToEvents, emitCommunityPosition } from '../../services/socket';
 
 const { width: SCREEN_W } = Dimensions.get('window');
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+function getCommunityMapHTML(lat, lng) {
+  return `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{margin:0;padding:0}
+html,body,#map{width:100%;height:100%;background:#121316}
+</style>
+</head><body><div id="map"></div>
+<script>
+var map=L.map('map',{zoomControl:false}).setView([${lat},${lng}],13);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+
+var userIcon=L.divIcon({className:'',html:'<div style="background:#fbbc04;border:2px solid #fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.4)">👤</div>',iconSize:[24,24],iconAnchor:[12,12]});
+var marker=L.marker([${lat},${lng}],{icon:userIcon}).addTo(map);
+
+map.on('click', function(e){
+  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'mapClick', lat: e.latlng.lat, lng: e.latlng.lng }));
+  marker.setLatLng(e.latlng);
+  map.setView(e.latlng);
+});
+
+window.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
+  if(d.type==='updateLocation'){ marker.setLatLng([d.lat,d.lng]); map.setView([d.lat,d.lng]); }
+}catch(err){}});
+document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
+  if(d.type==='updateLocation'){ marker.setLatLng([d.lat,d.lng]); map.setView([d.lat,d.lng]); }
+}catch(err){}});
+</script></body></html>`;
+}
 
 export default function CommunityHome({ navigation }) {
   const { user } = useAuthStore();
@@ -23,6 +66,8 @@ export default function CommunityHome({ navigation }) {
     { id: '2', name: 'SIGMA-9', status: 'cleared' },
     { id: '3', name: 'DELTA-4', status: 'standby' },
   ]);
+  const webRef = useRef(null);
+  const lastAlertDist = useRef(null); // Track threshold crossings so we don't spam notifications
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -44,6 +89,9 @@ export default function CommunityHome({ navigation }) {
 
   useEffect(() => {
     (async () => {
+      // Request notification permissions
+      await Notifications.requestPermissionsAsync();
+
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         const loc = await Location.getCurrentPositionAsync({});
@@ -83,6 +131,51 @@ export default function CommunityHome({ navigation }) {
 
         setAlertHistory(prev => [alert, ...prev].slice(0, 15));
       },
+      onVehicleMoved: (data) => {
+        // Dynamic live tracking distance
+        setLocation((currentLoc) => {
+          if (!currentLoc) return currentLoc;
+          const d = getDistanceKm(currentLoc.lat, currentLoc.lng, data.lat, data.lng);
+          setDistance(d.toFixed(1));
+
+          const prevD = lastAlertDist.current || 999;
+          
+          if (!activeAlert) {
+            setActiveAlert({
+              id: Date.now().toString(),
+              vehicleType: 'ambulance',
+              receivedAt: new Date().toISOString()
+            });
+            setCleared(false);
+          }
+
+          // Crossing 10km threshold -> Notification
+          if (prevD > 10 && d <= 10 && d > 5) {
+            Notifications.scheduleNotificationAsync({
+              content: { title: '🚑 Ambulance 10km Away', body: 'Emergency vehicle is approaching your sector.' },
+              trigger: null,
+            });
+          }
+          // Crossing 5km threshold -> Notification for non-active users simulation
+          if (prevD > 5 && d <= 5 && d > 3) {
+            Notifications.scheduleNotificationAsync({
+              content: { title: '🚨 Ambulance 5km Away', body: 'Please remain vigilant, emergency vehicle is entering your area.' },
+              trigger: null,
+            });
+          }
+          // Crossing 3km threshold -> Heavy ringing/vibration
+          if (prevD > 3 && d <= 3) {
+            Vibration.vibrate([0, 800, 200, 800, 200, 800, 200, 800, 200, 800, 200, 800]);
+            Notifications.scheduleNotificationAsync({
+              content: { title: '⚠️ EVASIVE ACTION REQUIRED', body: 'Ambulance < 3km! Please clear the road immediately.' },
+              trigger: null,
+            });
+          }
+
+          lastAlertDist.current = d;
+          return currentLoc;
+        });
+      },
       onVoiceBroadcast: (data) => {
         navigation.navigate('VoicePlayer', { audioUrl: data.audioUrl, fromName: data.fromName });
       },
@@ -109,7 +202,8 @@ export default function CommunityHome({ navigation }) {
     setDemoLat(lat.toString());
     setDemoLng(lng.toString());
     emitCommunityPosition(lat, lng);
-    Alert.alert('📍 Position Set', `Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}\n\nYou will now receive alerts when an ambulance approaches this position.`);
+    webRef.current?.postMessage(JSON.stringify({ type: 'updateLocation', lat, lng }));
+    Alert.alert('📍 Position Set', `Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}\n\nYou will now receive live alerts when an ambulance approaches this position.`);
   };
 
   const applyManualPosition = () => {
@@ -117,6 +211,15 @@ export default function CommunityHome({ navigation }) {
     const lng = parseFloat(demoLng);
     if (isNaN(lat) || isNaN(lng)) return Alert.alert('Invalid', 'Enter valid lat/lng numbers');
     setDemoPosition(lat, lng);
+  };
+
+  const onWebViewMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'mapClick') {
+        setDemoPosition(data.lat, data.lng);
+      }
+    } catch {}
   };
 
   const vehicleEmoji = { ambulance: '🚑', fire: '🚒', rescue: '⛵', police: '🚓' };
@@ -216,18 +319,19 @@ export default function CommunityHome({ navigation }) {
 
       {/* DEMO: Manual Position Setter */}
       <View style={styles.demoCard}>
-        <Text style={styles.demoTitle}>🧪 DEMO MODE — SET POSITION</Text>
-        <Text style={styles.demoSub}>Tap a preset to simulate being near an ambulance route:</Text>
+        <Text style={styles.demoTitle}>🧪 SET MY POST (Click map)</Text>
+        <Text style={styles.demoSub}>Tap on the map to set your location and test proximity alerts (3km/5km/10km) when the ambulance moves.</Text>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
-          {DEMO_PRESETS.map((p, i) => (
-            <TouchableOpacity key={i} style={styles.presetBtn} onPress={() => setDemoPosition(p.lat, p.lng)} activeOpacity={0.7}>
-              <Text style={styles.presetText}>{p.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.demoOrText}>— or enter manually —</Text>
+        <View style={styles.miniMapWrap}>
+          <WebView
+            ref={webRef}
+            source={{ html: getCommunityMapHTML(location?.lat || 11.2588, location?.lng || 75.7804) }}
+            style={{ width: '100%', height: '100%' }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            onMessage={onWebViewMessage}
+          />
+        </View>
 
         <View style={styles.manualRow}>
           <TextInput
@@ -388,6 +492,7 @@ const styles = StyleSheet.create({
   presetBtn: { backgroundColor: 'rgba(251,191,36,0.08)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 50, marginRight: 8, borderWidth: 1, borderColor: 'rgba(251,191,36,0.15)' },
   presetText: { color: '#fbbf24', fontSize: 12, fontWeight: '700' },
   demoOrText: { color: '#44474e', fontSize: 11, textAlign: 'center', marginVertical: 8 },
+  miniMapWrap: { height: 180, borderRadius: 12, overflow: 'hidden', marginVertical: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   manualRow: { flexDirection: 'row', gap: 8 },
   manualInput: { flex: 1, backgroundColor: '#212429', borderRadius: 10, padding: 12, color: '#e2e2e6', fontSize: 13, borderWidth: 1, borderColor: 'rgba(68,71,78,0.3)' },
   manualApplyBtn: { backgroundColor: '#fbbf24', borderRadius: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', minHeight: 44 },

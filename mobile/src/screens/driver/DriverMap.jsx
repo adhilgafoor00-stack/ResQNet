@@ -136,6 +136,7 @@ export default function DriverMap() {
   const [currentLocation, setCurrentLocation] = useState({ lat: 11.2588, lng: 75.7804 });
   const [hospitals, setHospitals] = useState(FALLBACK_HOSPITALS);
   const [selectedHospital, setSelectedHospital] = useState(null);
+  const [routePreviewing, setRoutePreviewing] = useState(false);
   const [routeActive, setRouteActive] = useState(false);
   const [showOptimize, setShowOptimize] = useState(false);
   const [trafficBlocks, setTrafficBlocks] = useState([]);
@@ -274,24 +275,29 @@ export default function DriverMap() {
       if (res.data.route?.geometry?.coordinates) {
         const coords = res.data.route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
         sendToMap({ type: 'drawRoute', coords, color: '#4285f4', dashed: false });
-        setRouteActive(true);
+        setRoutePreviewing(true);
         if (res.data.duration) setEta(`${Math.ceil(res.data.duration / 60)} min`);
         if (res.data.distance) setRouteDistance(`${(res.data.distance / 1000).toFixed(1)} km`);
-        if (trafficBlocks.length > 0) setShowOptimize(true);
       }
     } catch (err) {
       console.error('Route API Error:', err?.response?.data || err.message);
       // Fallback straight line
       sendToMap({ type: 'drawRoute', coords: [[currentLocation.lat, currentLocation.lng], [hospital.lat, hospital.lng]], color: '#4285f4', dashed: false });
-      setRouteActive(true);
+      setRoutePreviewing(true);
     }
+  };
 
-    // Notify backend
+  const startRoute = async () => {
+    setRoutePreviewing(false);
+    setRouteActive(true);
+    if (trafficBlocks.length > 0) setShowOptimize(true);
+    
+    // Notify backend and community
     try { await api.post('/api/vehicles/active', { location: currentLocation }); } catch {}
     try {
       await api.post('/api/dispatch', {
         vehicleId: user._id,
-        destination: { lat: hospital.lat, lng: hospital.lng, name: hospital.name }
+        destination: { lat: selectedHospital.lat, lng: selectedHospital.lng, name: selectedHospital.name }
       });
     } catch {}
   };
@@ -337,6 +343,7 @@ export default function DriverMap() {
 
   const cancelRoute = () => {
     setSelectedHospital(null);
+    setRoutePreviewing(false);
     setRouteActive(false);
     setEta(null);
     setRouteDistance(null);
@@ -468,9 +475,15 @@ export default function DriverMap() {
           </View>
 
           <View style={styles.routeActions}>
-            <TouchableOpacity style={styles.arrivedBtn} onPress={handleArrived}>
-              <Text style={styles.arrivedText}>✅ Arrived</Text>
-            </TouchableOpacity>
+            {routePreviewing ? (
+              <TouchableOpacity style={styles.startBtn} onPress={startRoute}>
+                <Text style={styles.startText}>🚀 START</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.arrivedBtn} onPress={handleArrived}>
+                <Text style={styles.arrivedText}>✅ Arrived</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.shareBtn} onPress={() => Alert.alert('Shared', 'Route shared with dispatcher.')}>
               <Text style={styles.shareText}>📤 Share</Text>
             </TouchableOpacity>
@@ -538,6 +551,8 @@ const styles = StyleSheet.create({
   routeType: { color: '#9aa0a6', fontSize: 13 },
   cancelBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(234,67,53,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(234,67,53,0.2)' },
   routeActions: { flexDirection: 'row', gap: 10 },
+  startBtn: { flex: 1, backgroundColor: '#34a853', borderRadius: 50, padding: 16, alignItems: 'center', minHeight: 52, justifyContent: 'center' },
+  startText: { color: '#fff', fontWeight: '900', fontSize: 16 },
   arrivedBtn: { flex: 1, backgroundColor: '#4285f4', borderRadius: 50, padding: 16, alignItems: 'center', minHeight: 52, justifyContent: 'center' },
   arrivedText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   shareBtn: { backgroundColor: 'rgba(66,133,244,0.1)', borderRadius: 50, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(66,133,244,0.2)', minHeight: 52 },
