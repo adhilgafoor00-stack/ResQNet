@@ -34,12 +34,16 @@ export default function DriverMap({ navigation }) {
         const loc = await Location.getCurrentPositionAsync({});
         const newLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setCurrentLocation(newLoc);
-        const res = await api.post('/api/vehicles/active', {
-          location: { lat: loc.coords.latitude, lng: loc.coords.longitude }
-        });
-        setVehicle(res.data.vehicle);
-        loadActiveBlocks();
-      } catch (err) { console.error('Go active error:', err); }
+        try {
+          const res = await api.post('/api/vehicles/active', {
+            location: { lat: loc.coords.latitude, lng: loc.coords.longitude }
+          });
+          setVehicle(res.data.vehicle);
+          loadActiveBlocks();
+        } catch (vErr) {
+          console.warn('Vehicle activation skipped:', vErr.response?.status || vErr.message);
+        }
+      } catch (err) { console.error('Location error:', err); }
 
       // GPS watcher — every 3 seconds
       locationWatcher.current = await Location.watchPositionAsync(
@@ -86,7 +90,6 @@ export default function DriverMap({ navigation }) {
     try {
       await api.patch(`/api/vehicles/${vehicle._id}/arrived`);
       Alert.alert('✅ Arrived', 'Dispatcher has been notified.');
-      navigation.goBack();
     } catch (err) { Alert.alert('Error', 'Could not mark as arrived'); }
   };
 

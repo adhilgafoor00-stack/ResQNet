@@ -6,8 +6,15 @@ export const API_URL = 'http://10.24.95.131:5000'; // Android emulator localhost
 
 export const api = axios.create({ baseURL: API_URL });
 
-// Attach stored token to every request
+// Attach token to every request — prefer in-memory store, fallback to AsyncStorage
 api.interceptors.request.use(async (config) => {
+  // Try in-memory first (instant, avoids async race condition)
+  const storeToken = useAuthStore.getState?.()?.token;
+  if (storeToken) {
+    config.headers.Authorization = `Bearer ${storeToken}`;
+    return config;
+  }
+  // Fallback to persisted token
   const token = await AsyncStorage.getItem('resqnet_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
