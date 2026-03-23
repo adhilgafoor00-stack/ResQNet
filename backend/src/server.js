@@ -16,6 +16,7 @@ const trafficRoutes = require('./routes/traffic');
 const broadcastRoutes = require('./routes/broadcast');
 const adminRoutes = require('./routes/admin');
 const routeRoutes = require('./routes/route');
+const { router: disasterRouter, setIo: setDisasterIo } = require('./routes/disaster');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -58,6 +59,7 @@ app.use('/api/traffic', trafficRoutes);
 app.use('/api/broadcast', broadcastRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/route', routeRoutes);
+app.use('/api/disaster', disasterRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -69,6 +71,9 @@ app.use(errorHandler);
 
 // Register Socket.io event handlers
 registerSocketHandlers(io);
+
+// Give disaster router access to io for broadcasting
+setDisasterIo(io);
 
 // MongoDB connection + server start
 const PORT = process.env.PORT || 5000;
@@ -89,4 +94,3 @@ mongoose.connect(MONGODB_URI)
   });
 
 module.exports = { app, server, io };
-

@@ -33,14 +33,17 @@ export function listenToEvents(handlers) {
   if (!socket) return;
 
   // Server → client events per spec
-  socket.on('vehicle:active', handlers.onVehicleActive || (() => {})); // vehicle:active
-  socket.on('vehicle:moved', handlers.onVehicleMoved || (() => {}));   // vehicle:moved
-  socket.on('vehicle:arrived', handlers.onVehicleArrived || (() => {})); // vehicle:arrived
-  socket.on('alert:community', handlers.onCommunityAlert || (() => {})); // alert:community — 500m alert
-  socket.on('broadcast:voice', handlers.onVoiceBroadcast || (() => {})); // broadcast:voice — play audio
-  socket.on('traffic:block', handlers.onTrafficBlock || (() => {}));     // traffic:block
-  socket.on('traffic:clear', handlers.onTrafficClear || (() => {}));     // traffic:clear
-  socket.on('police:alerted', handlers.onPoliceAlerted || (() => {}));  // police:alerted
+  socket.on('vehicle:active', handlers.onVehicleActive || (() => {}));
+  socket.on('vehicle:moved', handlers.onVehicleMoved || (() => {}));
+  socket.on('vehicle:arrived', handlers.onVehicleArrived || (() => {}));
+  socket.on('alert:community', handlers.onCommunityAlert || (() => {}));
+  socket.on('broadcast:voice', handlers.onVoiceBroadcast || (() => {}));
+  socket.on('traffic:block', handlers.onTrafficBlock || (() => {}));
+  socket.on('traffic:clear', handlers.onTrafficClear || (() => {}));
+  socket.on('police:alerted', handlers.onPoliceAlerted || (() => {}));
+  // Disaster response events
+  socket.on('disaster:enroute', handlers.onDisasterEnroute || (() => {}));
+  socket.on('disaster:arrived', handlers.onDisasterArrived || (() => {}));
 }
 
 export function emitDriverLocation(lat, lng) {

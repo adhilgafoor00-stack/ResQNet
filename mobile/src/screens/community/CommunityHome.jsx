@@ -233,6 +233,32 @@ export default function CommunityHome({ navigation }) {
         setCleared(false);
         setDistance(null);
       },
+      onDisasterEnroute: (data) => {
+        const typeIcons = { flood: '🌊', fire: '🔥', medical: '🏥', rescue: '🚁' };
+        const icon = typeIcons[data.type] || '🚨';
+        const alertObj = {
+          id: Date.now().toString(),
+          vehicleType: 'disaster',
+          teamName: data.teamName || 'Rescue Team',
+          disasterType: data.type,
+          icon,
+          receivedAt: new Date().toISOString(),
+          alertLevel: 'disaster',
+        };
+        setActiveAlert(alertObj);
+        setCleared(false);
+        Vibration.vibrate([0, 500, 200, 500, 200, 500, 200, 500]);
+        scheduleLocalNotification(
+          `${icon} EMERGENCY CONVOY EN ROUTE`,
+          `${data.teamName || 'Rescue Team'} is heading your way. Clear the road immediately.`
+        );
+      },
+      onDisasterArrived: () => {
+        webRef.current?.postMessage(JSON.stringify({ type: 'ambulanceArrived' }));
+        setActiveAlert(null);
+        setCleared(false);
+        setDistance(null);
+      },
       onVehicleActive: (data) => {
         // Vehicle just dispatched (or user opened app mid-journey) — show alert card
         const v = data.vehicle || data;

@@ -3,6 +3,7 @@ import { useAuthStore } from './store/useStore';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AdminPanel from './pages/AdminPanel';
+import DisasterPanel from './pages/DisasterPanel';
 import './index.css';
 
 export default function App() {
@@ -49,9 +50,18 @@ export default function App() {
         >
           ⚙️ Admin Panel
         </button>
+        <button 
+          className={activeTab === 'disaster' ? 'active' : ''} 
+          onClick={() => setActiveTab('disaster')}
+          style={activeTab === 'disaster' ? {} : { color: '#ef9a9a' }}
+        >
+          🚨 Disaster Response
+        </button>
       </div>
 
-      {activeTab === 'dashboard' ? <Dashboard /> : <AdminPanel />}
+      {activeTab === 'dashboard' && <Dashboard />}
+      {activeTab === 'admin' && <AdminPanel />}
+      {activeTab === 'disaster' && <DisasterPanel />}
     </div>
   );
 }
