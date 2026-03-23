@@ -11,15 +11,18 @@ import { connectSocket, emitDriverLocation, listenToEvents } from '../../service
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-// Nearest hospitals in Kozhikode (real coordinates)
+// Nearest & Distant specialized hospitals (Kozhikode + surrounding for realistic routing)
 const HOSPITALS = [
   { id: 'h1', name: 'Baby Memorial Hospital', lat: 11.2615, lng: 75.7830, type: 'Multi-specialty', beds: 350 },
-  { id: 'h2', name: 'MIMS Hospital', lat: 11.2735, lng: 75.7784, type: 'Super-specialty', beds: 750 },
-  { id: 'h3', name: 'IMA Hospital', lat: 11.2505, lng: 75.7766, type: 'General', beds: 120 },
-  { id: 'h4', name: 'Govt. Medical College', lat: 11.2580, lng: 75.7700, type: 'Government', beds: 1200 },
-  { id: 'h5', name: 'Aster MIMS', lat: 11.2800, lng: 75.7900, type: 'Super-specialty', beds: 500 },
-  { id: 'h6', name: 'KIMS Hospital', lat: 11.2450, lng: 75.7820, type: 'Multi-specialty', beds: 200 },
-  { id: 'h7', name: 'Iqraa Hospital', lat: 11.2700, lng: 75.7750, type: 'General', beds: 150 },
+  { id: 'h2', name: 'ASTER MIMS Kozhikode', lat: 11.2735, lng: 75.7784, type: 'Super-specialty', beds: 750 },
+  { id: 'h3', name: 'Govt. Medical College Kozhikode', lat: 11.2580, lng: 75.7700, type: 'Government', beds: 1200 },
+  { id: 'h4', name: 'Meitra Hospital (Premium)', lat: 11.2858, lng: 75.7742, type: 'Super-specialty', beds: 220 },
+  { id: 'h5', name: 'Malabar Institute of Med Sci', lat: 11.2300, lng: 75.8000, type: 'Trauma Care', beds: 400 },
+  { id: 'h6', name: 'KIMS Al Shifa (Perinthalmanna)', lat: 10.9760, lng: 76.2230, type: 'Super-specialty', beds: 600 }, // Distant
+  { id: 'h7', name: 'Amrita Hospital (Kochi)', lat: 10.0384, lng: 76.2957, type: 'Super-specialty', beds: 1300 }, // Very distant
+  { id: 'h8', name: 'Aster Medcity (Kochi)', lat: 10.0540, lng: 76.2690, type: 'Premium Care', beds: 670 }, // Very distant
+  { id: 'h9', name: 'Rajagiri Hospital (Aluva)', lat: 10.1030, lng: 76.3680, type: 'Multi-specialty', beds: 500 }, // Very distant
+  { id: 'h10', name: 'Sree Chitra Tirunal (Trivandrum)', lat: 8.5241, lng: 76.9366, type: 'Institute of Medical Sci', beds: 253 }, // Extreme distance
 ];
 
 function getMapHTML(lat, lng) {
@@ -213,7 +216,8 @@ export default function DriverMap() {
         if (res.data.distance) setRouteDistance(`${(res.data.distance / 1000).toFixed(1)} km`);
         if (trafficBlocks.length > 0) setShowOptimize(true);
       }
-    } catch {
+    } catch (err) {
+      console.error('Route API Error:', err?.response?.data || err.message);
       // Fallback straight line
       sendToMap({ type: 'drawRoute', coords: [[currentLocation.lat, currentLocation.lng], [hospital.lat, hospital.lng]], color: '#4285f4', dashed: false });
       setRouteActive(true);
