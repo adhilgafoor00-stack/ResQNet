@@ -1,44 +1,170 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert
 } from 'react-native';
-import MapView, { Marker, Polyline, Circle } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useAuthStore, api } from '../../store/useStore';
 import { connectSocket, emitDriverLocation, listenToEvents } from '../../services/socket';
 
-const KOZHIKODE = { latitude: 11.2588, longitude: 75.7804 };
+const KOZHIKODE = { lat: 11.2588, lng: 75.7804 };
 
-export default function DriverMap({ navigation }) {
+/**
+ * Generates a self-contained Leaflet map HTML page
+ * Free CartoDB dark tiles — no API key needed
+ */
+function getMapHTML(lat, lng) {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body, #map { width: 100%; height: 100%; background: #0F1923; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', { zoomControl: false }).setView([${lat}, ${lng}], 15);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: ''
+    }).addTo(map);
+
+    // Driver marker
+    var driverIcon = L.divIcon({
+      className: '',
+      html: '<div style="background:#1E90FF;border:2px solid #fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:18px;">🚑</div>',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    });
+    var driverMarker = L.marker([${lat}, ${lng}], { icon: driverIcon }).addTo(map);
+
+    // Destination marker (hidden initially)
+    var destMarker = null;
+
+    // Route polyline
+    var routeLine = null;
+    var rerouteLine = null;
+
+    // Traffic block circles
+    var blockLayers = {};
+
+    // Update driver position
+    function updateDriver(lat, lng, emoji) {
+      driverMarker.setLatLng([lat, lng]);
+      if (emoji) {
+        driverIcon = L.divIcon({
+          className: '',
+          html: '<div style="background:#1E90FF;border:2px solid #fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:18px;">' + emoji + '</div>',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+        driverMarker.setIcon(driverIcon);
+      }
+      map.panTo([lat, lng]);
+    }
+
+    // Set destination
+    function setDestination(lat, lng, name) {
+      if (destMarker) map.removeLayer(destMarker);
+      destMarker = L.marker([lat, lng]).addTo(map).bindPopup(name || 'Destination');
+    }
+
+    // Add traffic block
+    function addBlock(id, lat, lng, radius) {
+      blockLayers[id] = L.circle([lat, lng], {
+        radius: radius,
+        color: '#FF4757',
+        fillColor: '#FF4757',
+        fillOpacity: 0.2,
+        weight: 2
+      }).addTo(map);
+    }
+
+    // Remove traffic block
+    function removeBlock(id) {
+      if (blockLayers[id]) {
+        map.removeLayer(blockLayers[id]);
+        delete blockLayers[id];
+      }
+    }
+
+    // Draw route
+    function drawRoute(coords, color, dashed) {
+      if (routeLine && !dashed) map.removeLayer(routeLine);
+      if (rerouteLine && dashed) map.removeLayer(rerouteLine);
+      var line = L.polyline(coords, { color: color || '#1E90FF', weight: 4, dashArray: dashed ? '10 5' : null }).addTo(map);
+      if (dashed) rerouteLine = line;
+      else routeLine = line;
+    }
+
+    // Listen for messages from React Native
+    window.addEventListener('message', function(e) {
+      try {
+        var data = JSON.parse(e.data);
+        if (data.type === 'updateDriver') updateDriver(data.lat, data.lng, data.emoji);
+        if (data.type === 'setDestination') setDestination(data.lat, data.lng, data.name);  
+        if (data.type === 'addBlock') addBlock(data.id, data.lat, data.lng, data.radius);
+        if (data.type === 'removeBlock') removeBlock(data.id);
+        if (data.type === 'drawRoute') drawRoute(data.coords, data.color, data.dashed);
+      } catch(err) {}
+    });
+
+    // Also handle Android postMessage
+    document.addEventListener('message', function(e) {
+      try {
+        var data = JSON.parse(e.data);
+        if (data.type === 'updateDriver') updateDriver(data.lat, data.lng, data.emoji);
+        if (data.type === 'setDestination') setDestination(data.lat, data.lng, data.name);
+        if (data.type === 'addBlock') addBlock(data.id, data.lat, data.lng, data.radius);
+        if (data.type === 'removeBlock') removeBlock(data.id);
+        if (data.type === 'drawRoute') drawRoute(data.coords, data.color, data.dashed);
+      } catch(err) {}
+    });
+  </script>
+</body>
+</html>`;
+}
+
+export default function DriverMap() {
   const { user } = useAuthStore();
   const [currentLocation, setCurrentLocation] = useState(KOZHIKODE);
   const [vehicle, setVehicle] = useState(null);
-  const [route, setRoute] = useState([]); // polyline points [{lat,lng}]
   const [trafficBlocks, setTrafficBlocks] = useState([]);
   const [showReroute, setShowReroute] = useState(false);
-  const [rerouteRoute, setRerouteRoute] = useState([]);
+  const webRef = useRef(null);
   const locationWatcher = useRef(null);
-  const locationInterval = useRef(null);
-  const mapRef = useRef(null);
+
+  const vehicleEmoji = { ambulance: '🚑', fire: '🚒', rescue: '⛵', police: '🚓' }[user?.vehicleType] || '🚗';
+
+  // Send message to WebView map
+  const sendToMap = useCallback((data) => {
+    webRef.current?.postMessage(JSON.stringify(data));
+  }, []);
 
   useEffect(() => {
-    activateKeepAwakeAsync(); // Prevent screen sleep during dispatch
+    activateKeepAwakeAsync();
 
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return Alert.alert('Permission needed', 'Location required for driving');
 
-      // Go active
       try {
         const loc = await Location.getCurrentPositionAsync({});
-        const newLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        const newLoc = { lat: loc.coords.latitude, lng: loc.coords.longitude };
         setCurrentLocation(newLoc);
         try {
-          const res = await api.post('/api/vehicles/active', {
-            location: { lat: loc.coords.latitude, lng: loc.coords.longitude }
-          });
+          const res = await api.post('/api/vehicles/active', { location: newLoc });
           setVehicle(res.data.vehicle);
+          if (res.data.vehicle?.destination?.lat) {
+            sendToMap({ type: 'setDestination', lat: res.data.vehicle.destination.lat, lng: res.data.vehicle.destination.lng, name: res.data.vehicle.destination.name });
+          }
           loadActiveBlocks();
         } catch (vErr) {
           console.warn('Vehicle activation skipped:', vErr.response?.status || vErr.message);
@@ -49,10 +175,11 @@ export default function DriverMap({ navigation }) {
       locationWatcher.current = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, timeInterval: 3000, distanceInterval: 10 },
         (loc) => {
-          const newLoc = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+          const newLoc = { lat: loc.coords.latitude, lng: loc.coords.longitude };
           setCurrentLocation(newLoc);
-          emitDriverLocation(loc.coords.latitude, loc.coords.longitude); // driver:location every 3s
-          checkBlockProximity(loc.coords.latitude, loc.coords.longitude);
+          sendToMap({ type: 'updateDriver', lat: newLoc.lat, lng: newLoc.lng, emoji: vehicleEmoji });
+          emitDriverLocation(newLoc.lat, newLoc.lng);
+          checkBlockProximity(newLoc.lat, newLoc.lng);
         }
       );
     })();
@@ -60,8 +187,14 @@ export default function DriverMap({ navigation }) {
     // Socket events
     const socket = connectSocket(user._id);
     listenToEvents({
-      onTrafficBlock: (data) => setTrafficBlocks(prev => [...prev, data.block]),
-      onTrafficClear: (data) => setTrafficBlocks(prev => prev.filter(b => b._id !== data.blockId)),
+      onTrafficBlock: (data) => {
+        setTrafficBlocks(prev => [...prev, data.block]);
+        sendToMap({ type: 'addBlock', id: data.block._id, lat: data.block.lat, lng: data.block.lng, radius: data.block.radius });
+      },
+      onTrafficClear: (data) => {
+        setTrafficBlocks(prev => prev.filter(b => b._id !== data.blockId));
+        sendToMap({ type: 'removeBlock', id: data.blockId });
+      },
     });
 
     return () => {
@@ -74,6 +207,9 @@ export default function DriverMap({ navigation }) {
     try {
       const res = await api.get('/api/traffic/active');
       setTrafficBlocks(res.data.blocks);
+      res.data.blocks.forEach(b => {
+        sendToMap({ type: 'addBlock', id: b._id, lat: b.lat, lng: b.lng, radius: b.radius });
+      });
     } catch { /* non-blocking */ }
   };
 
@@ -108,75 +244,28 @@ export default function DriverMap({ navigation }) {
         ]])
       };
       const res = await api.post('/api/route/reroute', {
-        start: [currentLocation.longitude, currentLocation.latitude],
+        start: [currentLocation.lng, currentLocation.lat],
         end: [vehicle.destination.lng, vehicle.destination.lat],
         avoidPolygons
       });
-      if (res.data.route) {
-        const coords = res.data.route.geometry?.coordinates?.map(([lng, lat]) => ({ lat, lng })) || [];
-        setRerouteRoute(coords);
+      if (res.data.route?.geometry?.coordinates) {
+        const coords = res.data.route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        sendToMap({ type: 'drawRoute', coords, color: '#00C896', dashed: true });
       }
     } catch { /* use original route */ }
   };
 
-  const vehicleEmoji = { ambulance: '🚑', fire: '🚒', rescue: '⛵', police: '🚓' }[user?.vehicleType] || '🚗';
-
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
+      <WebView
+        ref={webRef}
+        source={{ html: getMapHTML(currentLocation.lat, currentLocation.lng) }}
         style={styles.map}
-        initialRegion={{ ...currentLocation, latitudeDelta: 0.02, longitudeDelta: 0.02 }}
-        showsUserLocation={true}
-        showsMyLocationButton={true}
-      >
-
-        {/* Driver position */}
-        <Marker coordinate={currentLocation}>
-          <View style={styles.driverPin}>
-            <Text style={{ fontSize: 20 }}>{vehicleEmoji}</Text>
-          </View>
-        </Marker>
-
-        {/* Route polyline */}
-        {route.length > 0 && (
-          <Polyline
-            coordinates={route.map(p => ({ latitude: p.lat, longitude: p.lng }))}
-            strokeColor="#1E90FF"
-            strokeWidth={4}
-          />
-        )}
-
-        {/* Reroute polyline */}
-        {rerouteRoute.length > 0 && (
-          <Polyline
-            coordinates={rerouteRoute.map(p => ({ latitude: p.lat, longitude: p.lng }))}
-            strokeColor="#00C896"
-            strokeWidth={4}
-            lineDashPattern={[10, 5]}
-          />
-        )}
-
-        {/* Traffic block circles */}
-        {trafficBlocks.map(block => (
-          <Circle
-            key={block._id}
-            center={{ latitude: block.lat, longitude: block.lng }}
-            radius={block.radius}
-            fillColor="rgba(255,71,87,0.2)"
-            strokeColor="#FF4757"
-            strokeWidth={2}
-          />
-        ))}
-
-        {/* Destination pin */}
-        {vehicle?.destination?.lat && (
-          <Marker
-            coordinate={{ latitude: vehicle.destination.lat, longitude: vehicle.destination.lng }}
-            title={vehicle.destination.name || 'Destination'}
-          />
-        )}
-      </MapView>
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        originWhitelist={['*']}
+        scrollEnabled={false}
+      />
 
       {/* Top status pill */}
       <View style={styles.statusPill}>
@@ -226,24 +315,12 @@ function getDistanceMetres(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const darkMapStyle = [];
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0F1923' },
-  map: { flex: 1 },
-  driverPin: {
-    backgroundColor: '#1E90FF',
-    borderRadius: 24,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
+  map: { flex: 1, backgroundColor: '#0F1923' },
   statusPill: {
     position: 'absolute',
-    top: 52,
+    top: 16,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
