@@ -135,8 +135,10 @@ router.patch('/community/:id/location', auth, async (req, res) => {
 router.patch('/community/:id/status', auth, async (req, res) => {
   try {
     const { isActive } = req.body;
-    // Allow self-update or dispatcher
-    if (req.user.userId !== req.params.id && req.user.role !== 'dispatcher') {
+    // Allow self-update or dispatcher (auth middleware sets req.user to full User doc)
+    const isSelf = req.user._id.toString() === req.params.id;
+    const isDispatcher = req.user.role === 'dispatcher';
+    if (!isSelf && !isDispatcher) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
     await User.findByIdAndUpdate(req.params.id, { isActive });
