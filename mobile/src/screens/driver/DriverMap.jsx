@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView,
-  Animated, Dimensions
+  Animated, Dimensions, TextInput
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -143,6 +143,8 @@ export default function DriverMap() {
   const [routeDistance, setRouteDistance] = useState(null);
   const [showHospList, setShowHospList] = useState(false);
   const [showDemoSetter, setShowDemoSetter] = useState(false);
+  const [demoLat, setDemoLat] = useState('');
+  const [demoLng, setDemoLng] = useState('');
   const [isFetchingHospitals, setIsFetchingHospitals] = useState(false);
   const webRef = useRef(null);
   const locationWatcher = useRef(null);
@@ -157,8 +159,11 @@ export default function DriverMap() {
     try {
       const radius = 20000; // 20km search radius
       const query = `[out:json];node["amenity"="hospital"](around:${radius},${lat},${lng});out 15;`;
-      const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
-      const res = await fetch(url);
+      const res = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`
+      });
       const data = await res.json();
       
       const parsedHospitals = data.elements
@@ -382,6 +387,15 @@ export default function DriverMap() {
       {showDemoSetter && (
         <View style={styles.demoCard}>
           <Text style={styles.demoTitle}>TEST POSITIONS (Teleport)</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+            <TextInput style={styles.demoInput} placeholder="Lat" placeholderTextColor="#666" value={demoLat} onChangeText={setDemoLat} keyboardType="numeric" />
+            <TextInput style={styles.demoInput} placeholder="Lng" placeholderTextColor="#666" value={demoLng} onChangeText={setDemoLng} keyboardType="numeric" />
+            <TouchableOpacity style={styles.demoGoBtn} onPress={() => {
+              if(demoLat && demoLng) setDemoPosition(parseFloat(demoLat), parseFloat(demoLng));
+            }}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>GO</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.demoPresets}>
             <TouchableOpacity style={styles.demoBtn} onPress={() => setDemoPosition(11.2588, 75.7804)}>
               <Text style={styles.demoBtnText}>📍 Kozhikode</Text>
@@ -531,6 +545,8 @@ const styles = StyleSheet.create({
   // Demo Card
   demoCard: { position: 'absolute', top: 70, left: 12, right: 12, backgroundColor: '#212429', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#4285f4', zIndex: 100 },
   demoTitle: { color: '#8ab4f8', fontSize: 13, fontWeight: '800', marginBottom: 12, textAlign: 'center' },
+  demoInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', color: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  demoGoBtn: { backgroundColor: '#4285f4', paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', borderRadius: 8 },
   demoPresets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
   demoBtn: { backgroundColor: 'rgba(66,133,244,0.15)', borderWidth: 1, borderColor: 'rgba(66,133,244,0.3)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   demoBtnText: { color: '#e2e2e6', fontSize: 13, fontWeight: '600' },
