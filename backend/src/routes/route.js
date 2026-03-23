@@ -3,6 +3,33 @@ const auth = require('../middleware/auth');
 const router = express.Router();
 
 /**
+ * POST /api/route — OSRM basic routing (JSON body)
+ * Body: { start: [lng, lat], end: [lng, lat] }
+ */
+router.post('/', auth, async (req, res) => {
+  try {
+    const { start, end } = req.body;
+    if (!start || !end) {
+      return res.status(400).json({ success: false, error: 'start [lng,lat] and end [lng,lat] required' });
+    }
+    const url = `https://router.project-osrm.org/route/v1/driving/${start[0]},${start[1]};${end[0]},${end[1]}?overview=full&geometries=geojson&steps=true`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (data.code !== 'Ok') {
+      return res.status(400).json({ success: false, error: 'Could not compute route' });
+    }
+    res.json({
+      success: true,
+      route: data.routes[0],
+      duration: data.routes[0].duration,
+      distance: data.routes[0].distance
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/route/basic — Proxy to OSRM for basic routing
  * Client sends: ?start=lng,lat&end=lng,lat
  * Proxies to OSRM public API (no API key needed)
