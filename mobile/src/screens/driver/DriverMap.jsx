@@ -164,7 +164,14 @@ export default function DriverMap() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `data=${encodeURIComponent(query)}`
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.warn('Overpass API returned non-JSON (usually a server busy HTML page). Using fallback hospitals.');
+        return; // Retain current/fallback hospitals
+      }
       
       const parsedHospitals = data.elements
         .filter(e => e.tags && e.tags.name)
