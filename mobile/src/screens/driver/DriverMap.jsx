@@ -20,149 +20,125 @@ const FALLBACK_HOSPITALS = [
 ];
 
 function getMapHTML(lat, lng, hospitalsData) {
+  // Generate hospital markers JSON dynamically
   const hospitalsJSON = JSON.stringify(hospitalsData || FALLBACK_HOSPITALS);
   return `<!DOCTYPE html>
-<html>
-<head>
+<html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-html,body,#map { width:100%; height:100%; }
-.popup-box { font-family:sans-serif; padding:10px 12px; min-width:150px; }
-.popup-title { font-size:14px; font-weight:800; color:#1a1a2e; margin-bottom:4px; }
-.popup-sub { font-size:11px; color:#DC143C; font-weight:700; margin-bottom:8px; }
-.popup-btn { display:block; width:100%; background:#DC143C; color:#fff; border:none; padding:9px; border-radius:8px; font-weight:800; font-size:12px; cursor:pointer; text-align:center; }
+*{margin:0;padding:0}
+html,body,#map{width:100%;height:100%;background:#121316}
+.hospital-popup{font-family:system-ui;font-size:13px;line-height:1.4}
+.hospital-popup b{color:#1a73e8;font-size:14px}
+.hospital-popup .type{color:#666;font-size:11px}
+.hospital-popup .dir-btn{display:block;margin-top:8px;background:#1a73e8;color:#fff;border:none;padding:8px 16px;border-radius:20px;font-weight:700;font-size:12px;cursor:pointer;text-align:center}
 </style>
-</head>
-<body>
-<div id="map"></div>
+</head><body><div id="map"></div>
 <script>
-var map = L.map('map', { zoomControl: true }).setView([${lat}, ${lng}], 14);
-var darkTile = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-var lightTile = 'https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png';
-var tileLayer = L.tileLayer(lightTile, { maxZoom: 19 }).addTo(map);
+var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],14);
+var darkTile='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+var lightTile='https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png';
+var tileLayer=L.tileLayer(lightTile,{maxZoom:19}).addTo(map);
 
-var driverIcon = L.divIcon({
-  className: '',
-  html: '<div style="background:#DC143C;border:3px solid #fff;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 2px 16px rgba(220,20,60,0.6)">' + String.fromCodePoint(0x1F691) + '</div>',
-  iconSize: [44, 44],
-  iconAnchor: [22, 22]
-});
-var driverMarker = L.marker([${lat}, ${lng}], { icon: driverIcon, zIndexOffset: 1000 }).addTo(map);
+// Driver marker
+var driverIcon=L.divIcon({className:'',html:'<div style="background:#DC143C;border:3px solid #fff;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 2px 12px rgba(220,20,60,0.5)">🚑</div>',iconSize:[44,44],iconAnchor:[22,22]});
+var driverMarker=L.marker([${lat},${lng}],{icon:driverIcon,zIndexOffset:1000}).addTo(map);
 
-var hospitals = ${hospitalsJSON};
-var hospitalMarkers = {};
+// Hospital markers from prop
+var hospitals=${hospitalsJSON};
+var hospitalMarkers={};
 
-function renderHospitals(list) {
-  Object.values(hospitalMarkers).forEach(function(m) { map.removeLayer(m); });
-  hospitalMarkers = {};
-  list.forEach(function(h) {
-    var icon = L.divIcon({
-      className: '',
-      html: '<div style="background:#fff;border:2px solid #DC143C;border-radius:8px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(220,20,60,0.25)">' + String.fromCodePoint(0x1F3E5) + '</div>',
-      iconSize: [32, 32],
-      iconAnchor: [16, 32]
+function renderHospitals(newHospitals) {
+  // Clear old
+  for(var k in hospitalMarkers) map.removeLayer(hospitalMarkers[k]);
+  hospitalMarkers={};
+  hospitals = newHospitals;
+  
+  hospitals.forEach(function(h){
+    var icon=L.divIcon({
+      className:'',
+      html:'<div style="background:#fff;border:2px solid #DC143C;border-radius:8px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(220,20,60,0.25)">🏥</div>',
+      iconSize:[32,32],iconAnchor:[16,32]
     });
-    var m = L.marker([h.lat, h.lng], { icon: icon }).addTo(map);
-    m.bindPopup(
-      '<div class="popup-box"><div class="popup-title">' + h.name + '</div>' +
-      '<div class="popup-sub">' + h.type + ' &bull; ' + (h.beds || 'N/A') + ' beds</div>' +
-      '<button class="popup-btn" onclick="selectHospital(\'' + h.id + '\')">Get Directions</button></div>',
-      { closeButton: false, maxWidth: 220 }
-    );
-    hospitalMarkers[h.id] = m;
+    var m=L.marker([h.lat,h.lng],{icon:icon}).addTo(map);
+    m.bindPopup('<div class="hospital-popup"><b>'+h.name+'</b><br><span class="type">'+h.type+' • '+(h.beds||'N/A')+' beds</span><br><button class="dir-btn" onclick="selectHospital(\\''+h.id+'\\')">🚗 Directions</button></div>',{closeButton:true,maxWidth:220});
+    hospitalMarkers[h.id]=m;
   });
 }
-renderHospitals(hospitals);
+renderHospitals(hospitals); // initial render
 
-var routeLine = null;
-var rerouteLine = null;
-var blockLayers = {};
-var communityMarkers = {};
+var routeLine=null;
+var rerouteLine=null;
+var blockLayers={};
+var communityMarkers={};
 
-function selectHospital(id) {
-  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'hospitalSelected', id: id }));
+function selectHospital(id){
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'hospitalSelected',id:id}));
 }
 
-function updateDriver(lat, lng) {
-  driverMarker.setLatLng([lat, lng]);
+function updateDriver(lat,lng){
+  driverMarker.setLatLng([lat,lng]);
 }
 
-function drawRoute(coords, color, dashed) {
-  if (routeLine && !dashed) { map.removeLayer(routeLine); routeLine = null; }
-  if (rerouteLine && dashed) { map.removeLayer(rerouteLine); rerouteLine = null; }
-  var line = L.polyline(coords, {
-    color: color || '#DC143C',
-    weight: 5,
-    opacity: 0.9,
-    dashArray: dashed ? '10 6' : null,
-    lineCap: 'round',
-    lineJoin: 'round'
-  }).addTo(map);
-  if (dashed) { rerouteLine = line; } else { routeLine = line; }
-  map.fitBounds(line.getBounds(), { padding: [60, 60] });
+function drawRoute(coords,color,dashed){
+  if(routeLine&&!dashed)map.removeLayer(routeLine);
+  if(rerouteLine&&dashed)map.removeLayer(rerouteLine);
+  var line=L.polyline(coords,{color:color||'#4285f4',weight:6,opacity:0.85,dashArray:dashed?'12 6':null}).addTo(map);
+  if(dashed)rerouteLine=line;else routeLine=line;
+  map.fitBounds(line.getBounds(),{padding:[60,60]});
 }
 
-function clearRoute() {
-  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
-  if (rerouteLine) { map.removeLayer(rerouteLine); rerouteLine = null; }
+function clearRoute(){
+  if(routeLine)map.removeLayer(routeLine);
+  if(rerouteLine)map.removeLayer(rerouteLine);
+  routeLine=null;rerouteLine=null;
 }
 
-function addBlock(id, lat, lng, radius) {
-  blockLayers[id] = L.circle([lat, lng], { radius: radius, color: '#DC143C', fillColor: '#DC143C', fillOpacity: 0.1, weight: 2 }).addTo(map);
+function addBlock(id,lat,lng,radius){
+  blockLayers[id]=L.circle([lat,lng],{radius:radius,color:'#ea4335',fillColor:'#ea4335',fillOpacity:0.15,weight:2}).addTo(map);
 }
-function removeBlock(id) {
-  if (blockLayers[id]) { map.removeLayer(blockLayers[id]); delete blockLayers[id]; }
+function removeBlock(id){if(blockLayers[id]){map.removeLayer(blockLayers[id]);delete blockLayers[id]}}
+
+function callCommunity(el){
+  var p=el.getAttribute('data-phone'); var n=el.getAttribute('data-name');
+  if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'communityCall',phone:p,name:n}));
+}
+function addCommunity(id,lat,lng,name,status,phone){
+  if(communityMarkers[id])map.removeLayer(communityMarkers[id]);
+  var color=status==='active'?'#DC143C':'#999';
+  var icon=L.divIcon({className:'',html:'<div style="background:'+color+';border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,0.3)">👤</div>',iconSize:[26,26],iconAnchor:[13,13]});
+  var callBtn=phone ? '<button onclick="callCommunity(this)" data-phone="'+phone+'" data-name="'+name+'" style="margin-top:8px;background:#4285f4;color:#fff;border:none;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer">📞 Call</button>' : '';
+  var popup='<div style="text-align:center;min-width:120px;font-family:sans-serif"><b>'+name+'</b><br><span style="color:'+color+';font-size:11px">● '+(status==='active'?'Active':'Standby')+'</span><br>'+callBtn+'</div>';
+  communityMarkers[id]=L.marker([lat,lng],{icon:icon}).addTo(map).bindPopup(popup,{maxWidth:180,autoPan:false});
 }
 
-function callCommunity(el) {
-  var p = el.getAttribute('data-phone');
-  var n = el.getAttribute('data-name');
-  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'communityCall', phone: p, name: n }));
-}
+function focusDriver(){map.setView(driverMarker.getLatLng(),15)}
 
-function addCommunity(id, lat, lng, name, status, phone) {
-  if (communityMarkers[id]) { map.removeLayer(communityMarkers[id]); }
-  var active = status === 'active';
-  var color = active ? '#DC143C' : '#999';
-  var icon = L.divIcon({
-    className: '',
-    html: '<div style="background:#fff;border:2px solid ' + color + ';border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 1px 6px rgba(0,0,0,0.2)">' + String.fromCodePoint(0x1F464) + '</div>',
-    iconSize: [28, 28],
-    iconAnchor: [14, 14]
-  });
-  var callBtnHtml = phone ? '<button onclick="callCommunity(this)" data-phone="' + phone + '" data-name="' + name + '" style="margin-top:8px;background:#DC143C;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;width:100%">Call</button>' : '';
-  var statusLabel = active ? 'ACTIVE' : 'STANDBY';
-  var statusColor = active ? '#DC143C' : '#888';
-  var popupHtml = '<div style="font-family:sans-serif;padding:10px 12px;min-width:120px"><b style="font-size:13px;color:#1a1a2e">' + name + '</b><br><span style="color:' + statusColor + ';font-size:10px;font-weight:700">' + statusLabel + '</span>' + callBtnHtml + '</div>';
-  communityMarkers[id] = L.marker([lat, lng], { icon: icon }).addTo(map).bindPopup(popupHtml, { closeButton: false, maxWidth: 180, autoPan: false });
-}
-
-function focusDriver() {
-  map.setView(driverMarker.getLatLng(), 15);
-}
-
-function handleMsg(d) {
-  if (d.type === 'updateDriver') updateDriver(d.lat, d.lng);
-  if (d.type === 'drawRoute') drawRoute(d.coords, d.color, d.dashed);
-  if (d.type === 'clearRoute') clearRoute();
-  if (d.type === 'addBlock') addBlock(d.id, d.lat, d.lng, d.radius);
-  if (d.type === 'removeBlock') removeBlock(d.id);
-  if (d.type === 'addCommunity') addCommunity(d.id, d.lat, d.lng, d.name, d.status, d.phone);
-  if (d.type === 'focusDriver') focusDriver();
-  if (d.type === 'updateHospitals') renderHospitals(d.hospitals);
-  if (d.type === 'setTheme') {
-    map.removeLayer(tileLayer);
-    tileLayer = L.tileLayer(d.dark ? darkTile : lightTile, { maxZoom: 19 }).addTo(map);
-  }
-}
-window.addEventListener('message', function(e) { try { handleMsg(JSON.parse(e.data)); } catch(err) {} });
-document.addEventListener('message', function(e) { try { handleMsg(JSON.parse(e.data)); } catch(err) {} });
-</script>
-</body>
-</html>`;
+window.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
+  if(d.type==='updateDriver')updateDriver(d.lat,d.lng);
+  if(d.type==='drawRoute')drawRoute(d.coords,d.color,d.dashed);
+  if(d.type==='clearRoute')clearRoute();
+  if(d.type==='addBlock')addBlock(d.id,d.lat,d.lng,d.radius);
+  if(d.type==='removeBlock')removeBlock(d.id);
+  if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status,d.phone);
+  if(d.type==='focusDriver')focusDriver();
+  if(d.type==='updateHospitals')renderHospitals(d.hospitals);
+  if(d.type==='setTheme'){map.removeLayer(tileLayer);tileLayer=L.tileLayer(d.dark?darkTile:lightTile,{maxZoom:19}).addTo(map);}
+}catch(err){}});
+document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
+  if(d.type==='updateDriver')updateDriver(d.lat,d.lng);
+  if(d.type==='drawRoute')drawRoute(d.coords,d.color,d.dashed);
+  if(d.type==='clearRoute')clearRoute();
+  if(d.type==='addBlock')addBlock(d.id,d.lat,d.lng,d.radius);
+  if(d.type==='removeBlock')removeBlock(d.id);
+  if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status,d.phone);
+  if(d.type==='focusDriver')focusDriver();
+  if(d.type==='updateHospitals')renderHospitals(d.hospitals);
+  if(d.type==='setTheme'){map.removeLayer(tileLayer);tileLayer=L.tileLayer(d.dark?darkTile:lightTile,{maxZoom:19}).addTo(map);}
+}catch(err){}});
+</script></body></html>`;
 }
 
 export default function DriverMap() {
@@ -185,7 +161,7 @@ export default function DriverMap() {
   const [communityCount, setCommunityCount] = useState(0);
   const [communityMembers, setCommunityMembers] = useState([]);
   const [showCommunityPanel, setShowCommunityPanel] = useState(false);
-  const [isDark, setIsDark] = useState(false); // light mode by default to match white/crimson UI
+  const [isDark, setIsDark] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
   const webRef = useRef(null);
   const locationWatcher = useRef(null);
@@ -232,14 +208,6 @@ export default function DriverMap() {
     setShowDemoSetter(false);
   };
 
-  // Toggle dark/light tile layer
-  const toggleTheme = () => {
-    const newDark = !isDark;
-    setIsDark(newDark);
-    sendToMap({ type: 'setTheme', dark: newDark });
-  };
-
-  // Go to real GPS position — used by the 📍 button
   const goToGPS = async () => {
     setGettingLocation(true);
     try {
@@ -251,12 +219,19 @@ export default function DriverMap() {
       sendToMap({ type: 'focusDriver' });
       fetchNearbyHospitals(newLoc.lat, newLoc.lng);
     } catch {
-      sendToMap({ type: 'focusDriver' }); // fallback: just pan to current marker
+      sendToMap({ type: 'focusDriver' });
     } finally {
       setGettingLocation(false);
     }
   };
 
+
+  // Toggle dark/light tile layer
+  const toggleTheme = () => {
+    const newDark = !isDark;
+    setIsDark(newDark);
+    sendToMap({ type: 'setTheme', dark: newDark });
+  };
 
   // Pulse animation
   useEffect(() => {
@@ -336,7 +311,6 @@ export default function DriverMap() {
     setCommunityCount(0);
     setShowCommunityPanel(false);
 
-    // Get fresh GPS position before routing so we never use stale/fallback coords
     let loc = currentLocationRef.current;
     try {
       const freshLoc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -367,12 +341,9 @@ export default function DriverMap() {
           setCommunityCount(members.length);
           setCommunityMembers(members.slice(0, 5));
           if (members.length > 0) setShowCommunityPanel(true);
-          // Delay community pins by 600ms so route fitBounds settles first
-          // This prevents the map from panning to community member location
           setTimeout(() => {
-            members.forEach((m, idx) => {
-              const hasLoc = m.location && typeof m.location.lat === 'number' && m.location.lat !== 0;
-              if (hasLoc) {
+            members.forEach(m => {
+              if (m.location && m.location.lat) {
                 sendToMap({ type: 'addCommunity', id: m._id, lat: m.location.lat, lng: m.location.lng, name: m.name || 'Member', status: m.isActive ? 'active' : 'standby', phone: m.phone || '' });
               }
             });
@@ -493,6 +464,8 @@ export default function DriverMap() {
     setRouteDistance(null);
     setCommunityCount(0);
     setCommunityMembers([]);
+    setCommunityCount(0);
+    setCommunityMembers([]);
     setShowCommunityPanel(false);
     setShowOptimize(false);
     sendToMap({ type: 'clearRoute' });
@@ -594,11 +567,12 @@ export default function DriverMap() {
         </View>
       )}
 
-      {/* My Location button — fetches real GPS */}
+      {/* My Location button */}
       <TouchableOpacity
-        style={[styles.myLocBtn, isDark ? {} : { backgroundColor: 'rgba(255,255,255,0.9)', borderColor: '#ddd' }]}
+        style={styles.myLocBtn}
+
         onPress={goToGPS}
-        disabled={gettingLocation}
+
       >
         <Text style={{ fontSize: 18 }}>{gettingLocation ? '⏳' : '📍'}</Text>
       </TouchableOpacity>
@@ -628,18 +602,18 @@ export default function DriverMap() {
         </View>
       )}
 
-      {/* Active Route Bottom Card */}
+      {/* Active Route Bottom Card (Google Maps style) */}
       {selectedHospital && (
         <View style={styles.routeCard}>
-          <View style={styles.routeHandle} />
           <View style={styles.routeHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.routeHospName}>{selectedHospital.name}</Text>
               <View style={styles.routeStats}>
-                {eta && <View style={styles.routeEtaBadge}><Text style={styles.routeEtaText}>{eta}</Text></View>}
-                {routeDistance && <Text style={styles.routeDistText}>{routeDistance}</Text>}
-                <Text style={styles.routeTypeText}>{selectedHospital.type}</Text>
+                {eta && <Text style={styles.routeEta}>{eta}</Text>}
+                {routeDistance && <Text style={styles.routeDist}>{routeDistance}</Text>}
+                <Text style={styles.routeType}>{selectedHospital.type}</Text>
               </View>
+
               {communityCount > 0 ? (
                 <TouchableOpacity onPress={() => setShowCommunityPanel(p => !p)}>
                   <Text style={styles.communityInfo}>👥 {communityCount} members on route {showCommunityPanel ? '▲' : '▼'}</Text>
@@ -649,7 +623,8 @@ export default function DriverMap() {
               )}
             </View>
             <TouchableOpacity style={styles.cancelBtn} onPress={cancelRoute}>
-              <Text style={{ color: '#DC143C', fontWeight: '800', fontSize: 16 }}>✕</Text>
+              <Text style={{ color: '#DC143C', fontWeight: '800', fontSize: 14 }}>✕</Text>
+
             </TouchableOpacity>
           </View>
 
@@ -679,6 +654,7 @@ export default function DriverMap() {
           )}
 
           <View style={styles.routeActions}>
+
             {routePreviewing ? (
               <TouchableOpacity style={styles.startBtn} onPress={startRoute}>
                 <Text style={styles.startText}>🚀 START</Text>
@@ -697,9 +673,9 @@ export default function DriverMap() {
 
       {/* Optimize route prompt */}
       {showOptimize && (
-        <View style={[styles.optimizeCard, { bottom: selectedHospital ? 220 : 20 }]}>
-          <Text style={styles.optimizeTitle}>⚠️ Traffic detected on route</Text>
-          <Text style={styles.optimizeSub}>{trafficBlocks.length} block(s) ahead. Find an alternative?</Text>
+        <View style={[styles.optimizeCard, { bottom: selectedHospital ? 160 : 20 }]}>
+          <Text style={styles.optimizeTitle}>⚠️ Traffic blocks on route</Text>
+          <Text style={styles.optimizeSub}>{trafficBlocks.length} block(s) detected. Want to find an alternative?</Text>
           <View style={styles.optimizeActions}>
             <TouchableOpacity style={styles.optimizeYes} onPress={optimizeRoute}>
               <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Optimize Route</Text>
@@ -732,203 +708,55 @@ function getDistanceKm(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const CRIMSON = '#DC143C';
-const CRIMSON_DARK = '#A50D2B';
-const CRIMSON_LIGHT = 'rgba(220,20,60,0.08)';
-const GOLD = '#C9A84C';
-const WHITE = '#FFFFFF';
-const OFF_WHITE = '#F8F9FA';
-const SURFACE = '#FFFFFF';
-const BORDER = 'rgba(220,20,60,0.12)';
-const TEXT_PRI = '#0D0D1A';
-const TEXT_SEC = '#5A5A72';
-const TEXT_MUTED = '#9999AA';
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d0d14' },
+  container: { flex: 1, backgroundColor: '#fff' },
   map: { flex: 1 },
-
-  // ── Top bar ───────────────────────────────────────────────────────────────
-  topBar: {
-    position: 'absolute', top: 44, left: 12, right: 12,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-  },
-  driverChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: WHITE, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 50,
-    borderWidth: 1.5, borderColor: CRIMSON,
-    shadowColor: CRIMSON, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
-  },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: CRIMSON },
-  chipText: { color: TEXT_PRI, fontWeight: '800', fontSize: 13, letterSpacing: 0.3 },
-  btnGroup: { flexDirection: 'row', gap: 8 },
-  iconBtn: {
-    backgroundColor: WHITE, width: 40, height: 40, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: BORDER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 4,
-  },
-  iconBtnText: { fontSize: 16 },
-  listToggle: {
-    backgroundColor: WHITE, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 50,
-    borderWidth: 1.5, borderColor: BORDER,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 3,
-  },
-  listToggleText: { color: CRIMSON, fontWeight: '800', fontSize: 12 },
-
-  // ── GPS / location button ─────────────────────────────────────────────────
-  myLocBtn: {
-    position: 'absolute', right: 12, bottom: 220,
-    backgroundColor: WHITE, width: 48, height: 48, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: BORDER,
-    shadowColor: CRIMSON, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 6,
-  },
-
-  // ── Demo card ─────────────────────────────────────────────────────────────
-  demoCard: {
-    position: 'absolute', top: 100, left: 12, right: 12,
-    backgroundColor: WHITE, padding: 16, borderRadius: 20,
-    borderWidth: 1.5, borderColor: CRIMSON,
-    shadowColor: CRIMSON, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 16, elevation: 10,
-    zIndex: 100,
-  },
-  demoTitle: { color: CRIMSON, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 12, textAlign: 'center', textTransform: 'uppercase' },
-  demoInput: {
-    flex: 1, backgroundColor: OFF_WHITE, color: TEXT_PRI, padding: 10, borderRadius: 10,
-    borderWidth: 1, borderColor: BORDER, fontSize: 13,
-  },
-  demoGoBtn: { backgroundColor: CRIMSON, paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', borderRadius: 10, minHeight: 42 },
-  demoPresets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 4 },
-  demoBtn: {
-    backgroundColor: CRIMSON_LIGHT, borderWidth: 1, borderColor: 'rgba(220,20,60,0.2)',
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-  },
-  demoBtnText: { color: CRIMSON, fontSize: 12, fontWeight: '700' },
-
-  // ── Hospital list sheet ───────────────────────────────────────────────────
-  hospSheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: WHITE, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32,
-    borderTopWidth: 2, borderColor: CRIMSON,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 16,
-  },
-  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: CRIMSON, alignSelf: 'center', marginBottom: 14, opacity: 0.3 },
-  sheetTitle: { color: TEXT_PRI, fontSize: 17, fontWeight: '800', marginBottom: 12, letterSpacing: 0.2 },
-  hospRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(220,20,60,0.07)',
-  },
-  hospIcon: {
-    width: 44, height: 44, borderRadius: 12,
-    backgroundColor: CRIMSON_LIGHT, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(220,20,60,0.15)',
-  },
-  hospName: { color: TEXT_PRI, fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  hospMeta: { color: TEXT_SEC, fontSize: 11 },
-  hospBadge: {
-    backgroundColor: CRIMSON_LIGHT, paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 6, alignSelf: 'flex-start', marginTop: 3,
-  },
-  hospBadgeText: { color: CRIMSON, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-  hospDist: { alignItems: 'flex-end', gap: 2 },
-  hospDistText: { color: CRIMSON, fontSize: 14, fontWeight: '800' },
-  hospDirText: { color: TEXT_MUTED, fontSize: 10, fontWeight: '600' },
-
-  // ── Route bottom card ─────────────────────────────────────────────────────
-  routeCard: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: WHITE, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 36,
-    borderTopWidth: 2, borderColor: CRIMSON,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 16,
-  },
-  routeHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: CRIMSON, alignSelf: 'center', marginBottom: 14, opacity: 0.25 },
-  routeHospName: { color: TEXT_PRI, fontSize: 18, fontWeight: '900', letterSpacing: 0.1 },
-  routeStats: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' },
-  routeEtaBadge: {
-    backgroundColor: CRIMSON, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
-  },
-  routeEtaText: { color: WHITE, fontSize: 13, fontWeight: '800' },
-  routeDistText: { color: TEXT_SEC, fontSize: 13, fontWeight: '600' },
-  routeTypeText: { color: TEXT_MUTED, fontSize: 12 },
-  routeHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
-  cancelBtn: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: CRIMSON_LIGHT, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(220,20,60,0.2)',
-  },
-  routeActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  startBtn: {
-    flex: 1, backgroundColor: CRIMSON, borderRadius: 14,
-    paddingVertical: 17, alignItems: 'center', justifyContent: 'center',
-    shadowColor: CRIMSON, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 8, elevation: 6,
-  },
-  startText: { color: WHITE, fontWeight: '900', fontSize: 15, letterSpacing: 0.5 },
-  arrivedBtn: {
-    flex: 1, backgroundColor: '#109B6E', borderRadius: 14,
-    paddingVertical: 17, alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#109B6E', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
-  },
-  arrivedText: { color: WHITE, fontWeight: '800', fontSize: 15 },
-  shareBtn: {
-    backgroundColor: OFF_WHITE, borderRadius: 14, paddingHorizontal: 18,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: BORDER, minHeight: 54,
-  },
-  shareText: { color: CRIMSON, fontWeight: '700', fontSize: 13 },
-
-  // ── Community info ────────────────────────────────────────────────────────
-  communityInfo: { color: CRIMSON, fontSize: 12, fontWeight: '700', marginTop: 6, letterSpacing: 0.3 },
-  communityList: {
-    backgroundColor: CRIMSON_LIGHT, borderRadius: 12, marginVertical: 8,
-    borderWidth: 1.5, borderColor: 'rgba(220,20,60,0.12)', overflow: 'hidden',
-  },
-  communityRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(220,20,60,0.07)',
-  },
-  communityAvatar: {
-    width: 32, height: 32, borderRadius: 10,
-    backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(220,20,60,0.2)',
-  },
-  communityName: { color: TEXT_PRI, fontSize: 13, fontWeight: '700' },
-  communityPhone: { color: CRIMSON, fontSize: 11, marginTop: 1, fontWeight: '600' },
-
-  // ── Optimize card ─────────────────────────────────────────────────────────
-  optimizeCard: {
-    position: 'absolute', left: 12, right: 12,
-    backgroundColor: WHITE, borderRadius: 20, padding: 16,
-    borderWidth: 2, borderColor: CRIMSON,
-    shadowColor: CRIMSON, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 16, elevation: 10,
-  },
-  optimizeTitle: { color: CRIMSON, fontSize: 14, fontWeight: '900', marginBottom: 4 },
-  optimizeSub: { color: TEXT_SEC, fontSize: 12, marginBottom: 12 },
+  topBar: { position: 'absolute', top: 44, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  driverChip: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 50, borderWidth: 1.5, borderColor: '#DC143C', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 4 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#DC143C' },
+  chipText: { color: '#1a1a2e', fontWeight: '700', fontSize: 13 },
+  listToggle: { backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 50, borderWidth: 1.5, borderColor: 'rgba(220,20,60,0.15)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 3 },
+  listToggleText: { color: '#DC143C', fontWeight: '700', fontSize: 13 },
+  myLocBtn: { position: 'absolute', right: 12, bottom: 200, backgroundColor: '#fff', width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(220,20,60,0.15)', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 4 },
+  hospSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, paddingBottom: 32, borderTopWidth: 2, borderColor: '#DC143C', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 12 },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(220,20,60,0.3)', alignSelf: 'center', marginBottom: 12 },
+  sheetTitle: { color: '#1a1a2e', fontSize: 17, fontWeight: '800', marginBottom: 12 },
+  hospRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(220,20,60,0.08)' },
+  hospIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(220,20,60,0.06)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(220,20,60,0.12)' },
+  hospName: { color: '#1a1a2e', fontSize: 14, fontWeight: '700' },
+  hospMeta: { color: '#666', fontSize: 11, marginTop: 2 },
+  hospDist: { alignItems: 'flex-end' },
+  hospDistText: { color: '#DC143C', fontSize: 13, fontWeight: '800' },
+  hospDirText: { color: '#999', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  routeCard: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36, borderTopWidth: 2, borderColor: '#DC143C', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 12 },
+  routeHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 },
+  routeHospName: { color: '#1a1a2e', fontSize: 18, fontWeight: '900' },
+  routeStats: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' },
+  routeEta: { color: '#fff', fontSize: 13, fontWeight: '800', backgroundColor: '#DC143C', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, overflow: 'hidden' },
+  routeDist: { color: '#555', fontSize: 13, fontWeight: '600' },
+  routeType: { color: '#888', fontSize: 12 },
+  cancelBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(220,20,60,0.08)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(220,20,60,0.15)' },
+  routeActions: { flexDirection: 'row', gap: 10 },
+  startBtn: { flex: 1, backgroundColor: '#DC143C', borderRadius: 14, padding: 16, alignItems: 'center', minHeight: 52, justifyContent: 'center', shadowColor: '#DC143C', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 6 },
+  startText: { color: '#fff', fontWeight: '900', fontSize: 16, letterSpacing: 0.3 },
+  arrivedBtn: { flex: 1, backgroundColor: '#109B6E', borderRadius: 14, padding: 16, alignItems: 'center', minHeight: 52, justifyContent: 'center' },
+  arrivedText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  shareBtn: { backgroundColor: '#f8f9fa', borderRadius: 14, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(220,20,60,0.12)', minHeight: 52 },
+  shareText: { color: '#DC143C', fontWeight: '700', fontSize: 13 },
+  optimizeCard: { position: 'absolute', left: 12, right: 12, backgroundColor: '#fff', borderRadius: 16, padding: 16, borderWidth: 2, borderColor: '#DC143C', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 8 },
+  optimizeTitle: { color: '#DC143C', fontSize: 14, fontWeight: '900', marginBottom: 4 },
+  optimizeSub: { color: '#555', fontSize: 12, marginBottom: 12 },
   optimizeActions: { flexDirection: 'row', gap: 10 },
-  optimizeYes: {
-    flex: 1, backgroundColor: CRIMSON, borderRadius: 10,
-    padding: 13, alignItems: 'center', justifyContent: 'center',
-  },
-  optimizeNo: {
-    flex: 1, backgroundColor: OFF_WHITE, borderRadius: 10,
-    padding: 13, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: BORDER,
-  },
-
-  // ── Police banner ─────────────────────────────────────────────────────────
-  policeBanner: {
-    position: 'absolute', top: 104, left: 12, right: 12,
-    backgroundColor: '#109B6E', padding: 14, borderRadius: 16,
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 10,
-    zIndex: 2000,
-  },
+  optimizeYes: { flex: 1, backgroundColor: '#DC143C', borderRadius: 10, padding: 12, alignItems: 'center', minHeight: 44, justifyContent: 'center' },
+  optimizeNo: { flex: 1, backgroundColor: '#f8f9fa', borderRadius: 10, padding: 12, alignItems: 'center', minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(220,20,60,0.12)' },
+  demoCard: { position: 'absolute', top: 100, left: 12, right: 12, backgroundColor: '#fff', padding: 16, borderRadius: 16, borderWidth: 1.5, borderColor: '#DC143C', zIndex: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 8 },
+  demoTitle: { color: '#DC143C', fontSize: 11, fontWeight: '800', marginBottom: 12, textAlign: 'center', letterSpacing: 1 },
+  demoInput: { flex: 1, backgroundColor: '#f8f9fa', color: '#1a1a2e', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(220,20,60,0.12)' },
+  demoGoBtn: { backgroundColor: '#DC143C', paddingHorizontal: 16, justifyContent: 'center', alignItems: 'center', borderRadius: 10, minHeight: 42 },
+  demoPresets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  demoBtn: { backgroundColor: 'rgba(220,20,60,0.06)', borderWidth: 1, borderColor: 'rgba(220,20,60,0.15)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  demoBtnText: { color: '#DC143C', fontSize: 12, fontWeight: '700' },
+  policeBanner: { position: 'absolute', top: 104, left: 12, right: 12, backgroundColor: '#109B6E', padding: 14, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 14, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 6, zIndex: 2000 },
   policeEmoji: { fontSize: 24 },
-  policeTitle: { color: WHITE, fontWeight: '800', fontSize: 15 },
-  policeSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 1 },
-
-  // ── Already defined top-level constants used inline ───────────────────────
+  communityPhone: { color: '#8ab4f8', fontSize: 11, marginTop: 1 },
 });
