@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert
 } from 'react-native';
-import MapView, { Marker, Polyline, Circle, UrlTile, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polyline, Circle } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useAuthStore, api } from '../../store/useStore';
@@ -126,19 +126,10 @@ export default function DriverMap({ navigation }) {
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={PROVIDER_DEFAULT}
         initialRegion={{ ...currentLocation, latitudeDelta: 0.02, longitudeDelta: 0.02 }}
-        showsUserLocation={false}
-        mapType="none"
-        customMapStyle={darkMapStyle}
+        showsUserLocation={true}
+        showsMyLocationButton={true}
       >
-        {/* CartoDB dark tiles — no {s} subdomain, react-native-maps uses direct URL */}
-        <UrlTile
-          urlTemplate="https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
-          shouldReplaceMapContent={true}
-          maximumZ={19}
-          flipY={false}
-        />
 
         {/* Driver position */}
         <Marker coordinate={currentLocation}>
