@@ -21,112 +21,148 @@ const FALLBACK_HOSPITALS = [
 
 function getMapHTML(lat, lng, hospitalsData) {
   const hospitalsJSON = JSON.stringify(hospitalsData || FALLBACK_HOSPITALS);
-  return `<!DOCTYPE html><html><head>
+  return `<!DOCTYPE html>
+<html>
+<head>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-*{margin:0;padding:0}
-html,body,#map{width:100%;height:100%;background:#0d0d0d}
-.leaflet-control-zoom{border:none!important;box-shadow:0 4px 20px rgba(0,0,0,0.25)!important;border-radius:12px!important;overflow:hidden}
-.leaflet-control-zoom a{background:#fff!important;color:#DC143C!important;font-weight:800!important;border:none!important;width:36px!important;height:36px!important;line-height:36px!important;font-size:18px!important}
-.leaflet-control-zoom a:hover{background:#DC143C!important;color:#fff!important}
-.leaflet-popup-content-wrapper{border-radius:16px!important;border:none!important;box-shadow:0 8px 32px rgba(0,0,0,0.18)!important;padding:0!important;overflow:hidden}
-.leaflet-popup-tip{background:#fff!important}
-.hp{font-family:-apple-system,sans-serif;padding:14px 16px;min-width:180px}
-.hp-name{font-size:14px;font-weight:800;color:#1a1a2e;margin-bottom:3px}
-.hp-type{font-size:11px;color:#DC143C;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px}
-.hp-beds{font-size:11px;color:#666;margin-bottom:10px}
-.hp-btn{width:100%;background:#DC143C;color:#fff;border:none;padding:9px 0;border-radius:10px;font-weight:800;font-size:12px;letter-spacing:.5px;cursor:pointer;transition:background .15s}
-.hp-btn:hover{background:#b01030}
-.drv-wrap{position:relative;width:52px;height:52px}
-.drv-ring{position:absolute;top:0;left:0;width:52px;height:52px;border-radius:50%;background:rgba(220,20,60,0.25);animation:ring 1.4s ease-out infinite}
-.drv-core{position:absolute;top:6px;left:6px;width:40px;height:40px;background:#DC143C;border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 16px rgba(220,20,60,0.55)}
-@keyframes ring{0%{transform:scale(1);opacity:.8}100%{transform:scale(1.8);opacity:0}}
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body,#map { width:100%; height:100%; }
+.popup-box { font-family:sans-serif; padding:10px 12px; min-width:150px; }
+.popup-title { font-size:14px; font-weight:800; color:#1a1a2e; margin-bottom:4px; }
+.popup-sub { font-size:11px; color:#DC143C; font-weight:700; margin-bottom:8px; }
+.popup-btn { display:block; width:100%; background:#DC143C; color:#fff; border:none; padding:9px; border-radius:8px; font-weight:800; font-size:12px; cursor:pointer; text-align:center; }
 </style>
-</head><body><div id="map"></div>
+</head>
+<body>
+<div id="map"></div>
 <script>
-var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],14);
-var darkTile='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-var lightTile='https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png';
-var tileLayer=L.tileLayer(lightTile,{maxZoom:19}).addTo(map);
+var map = L.map('map', { zoomControl: true }).setView([${lat}, ${lng}], 14);
+var darkTile = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+var lightTile = 'https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png';
+var tileLayer = L.tileLayer(lightTile, { maxZoom: 19 }).addTo(map);
 
-// Ambulance marker – CSS classes defined in <style> block (no curly braces in JS string)
-var driverIcon=L.divIcon({className:'',html:'<div class="drv-wrap"><div class="drv-ring"></div><div class="drv-core">🚑</div></div>',iconSize:[52,52],iconAnchor:[26,26]});
-var driverMarker=L.marker([${lat},${lng}],{icon:driverIcon,zIndexOffset:1000}).addTo(map);
+var driverIcon = L.divIcon({
+  className: '',
+  html: '<div style="background:#DC143C;border:3px solid #fff;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 2px 16px rgba(220,20,60,0.6)">' + String.fromCodePoint(0x1F691) + '</div>',
+  iconSize: [44, 44],
+  iconAnchor: [22, 22]
+});
+var driverMarker = L.marker([${lat}, ${lng}], { icon: driverIcon, zIndexOffset: 1000 }).addTo(map);
 
-var hospitals=${hospitalsJSON};
-var hospitalMarkers={};
+var hospitals = ${hospitalsJSON};
+var hospitalMarkers = {};
 
-function renderHospitals(newHospitals){
-  for(var k in hospitalMarkers)map.removeLayer(hospitalMarkers[k]);
-  hospitalMarkers={};
-  hospitals=newHospitals;
-  hospitals.forEach(function(h){
-    var icon=L.divIcon({className:'',html:'<div style="background:#fff;border:2.5px solid #DC143C;border-radius:10px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 3px 12px rgba(220,20,60,0.25)">🏥</div>',iconSize:[34,34],iconAnchor:[17,34]});
-    var m=L.marker([h.lat,h.lng],{icon:icon}).addTo(map);
-    var bedsText=h.beds?h.beds+' beds':'N/A';
-    m.bindPopup('<div class="hp"><div class="hp-name">'+h.name+'</div><div class="hp-type">'+h.type+'</div><div class="hp-beds">🛏 '+bedsText+'</div><button class="hp-btn" onclick="selectHospital(\''+h.id+'\')">&rarr; Get Directions</button></div>',{closeButton:false,maxWidth:220});
-    hospitalMarkers[h.id]=m;
+function renderHospitals(list) {
+  Object.values(hospitalMarkers).forEach(function(m) { map.removeLayer(m); });
+  hospitalMarkers = {};
+  list.forEach(function(h) {
+    var icon = L.divIcon({
+      className: '',
+      html: '<div style="background:#fff;border:2px solid #DC143C;border-radius:8px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(220,20,60,0.25)">' + String.fromCodePoint(0x1F3E5) + '</div>',
+      iconSize: [32, 32],
+      iconAnchor: [16, 32]
+    });
+    var m = L.marker([h.lat, h.lng], { icon: icon }).addTo(map);
+    m.bindPopup(
+      '<div class="popup-box"><div class="popup-title">' + h.name + '</div>' +
+      '<div class="popup-sub">' + h.type + ' &bull; ' + (h.beds || 'N/A') + ' beds</div>' +
+      '<button class="popup-btn" onclick="selectHospital(\'' + h.id + '\')">Get Directions</button></div>',
+      { closeButton: false, maxWidth: 220 }
+    );
+    hospitalMarkers[h.id] = m;
   });
 }
 renderHospitals(hospitals);
 
-var routeLine=null;var rerouteLine=null;var blockLayers={};var communityMarkers={};
+var routeLine = null;
+var rerouteLine = null;
+var blockLayers = {};
+var communityMarkers = {};
 
-function selectHospital(id){window.ReactNativeWebView.postMessage(JSON.stringify({type:'hospitalSelected',id:id}));}
-
-function updateDriver(lat,lng){driverMarker.setLatLng([lat,lng]);}
-
-function drawRoute(coords,color,dashed){
-  if(routeLine&&!dashed)map.removeLayer(routeLine);
-  if(rerouteLine&&dashed)map.removeLayer(rerouteLine);
-  var c=color||'#DC143C';
-  // Draw shadow line for depth
-  if(!dashed)L.polyline(coords,{color:'rgba(220,20,60,0.15)',weight:12,opacity:1}).addTo(map);
-  var line=L.polyline(coords,{color:c,weight:5,opacity:0.95,dashArray:dashed?'10 6':null,lineCap:'round',lineJoin:'round'}).addTo(map);
-  if(dashed)rerouteLine=line;else routeLine=line;
-  map.fitBounds(line.getBounds(),{padding:[70,70]});
+function selectHospital(id) {
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'hospitalSelected', id: id }));
 }
 
-function clearRoute(){
-  if(routeLine)map.removeLayer(routeLine);
-  if(rerouteLine)map.removeLayer(rerouteLine);
-  routeLine=null;rerouteLine=null;
-  // clear shadow layers too
-  map.eachLayer(function(l){if(l.options&&l.options.color&&l.options.color.includes('0.15'))map.removeLayer(l);});
+function updateDriver(lat, lng) {
+  driverMarker.setLatLng([lat, lng]);
 }
 
-function addBlock(id,lat,lng,radius){blockLayers[id]=L.circle([lat,lng],{radius:radius,color:'#DC143C',fillColor:'#DC143C',fillOpacity:0.1,weight:2,dashArray:'6 4'}).addTo(map);}
-function removeBlock(id){if(blockLayers[id]){map.removeLayer(blockLayers[id]);delete blockLayers[id];}}
-
-function callCommunity(el){var p=el.getAttribute('data-phone');var n=el.getAttribute('data-name');if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'communityCall',phone:p,name:n}));}
-
-function addCommunity(id,lat,lng,name,status,phone){
-  if(communityMarkers[id])map.removeLayer(communityMarkers[id]);
-  var active=status==='active';
-  var icon=L.divIcon({className:'',html:'<div style="background:'+(active?'#fff':'#f5f5f5')+';border:2px solid '+(active?'#DC143C':'#999')+';border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.2)">👤</div>',iconSize:[28,28],iconAnchor:[14,14]});
-  var btn=phone?'<button onclick="callCommunity(this)" data-phone="'+phone+'" data-name="'+name+'" style="margin-top:8px;background:#DC143C;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;width:100%">📞 Call</button>':'';
-  var popup='<div style="font-family:-apple-system,sans-serif;padding:10px 12px;min-width:130px"><b style="color:#1a1a2e;font-size:14px">'+name+'</b><br><span style="color:'+(active?'#DC143C':'#888')+';font-size:10px;font-weight:700;letter-spacing:.5px">'+(active?'● ACTIVE':'● STANDBY')+'</span>'+btn+'</div>';
-  communityMarkers[id]=L.marker([lat,lng],{icon:icon}).addTo(map).bindPopup(popup,{closeButton:false,maxWidth:180,autoPan:false});
+function drawRoute(coords, color, dashed) {
+  if (routeLine && !dashed) { map.removeLayer(routeLine); routeLine = null; }
+  if (rerouteLine && dashed) { map.removeLayer(rerouteLine); rerouteLine = null; }
+  var line = L.polyline(coords, {
+    color: color || '#DC143C',
+    weight: 5,
+    opacity: 0.9,
+    dashArray: dashed ? '10 6' : null,
+    lineCap: 'round',
+    lineJoin: 'round'
+  }).addTo(map);
+  if (dashed) { rerouteLine = line; } else { routeLine = line; }
+  map.fitBounds(line.getBounds(), { padding: [60, 60] });
 }
 
-function focusDriver(){map.setView(driverMarker.getLatLng(),15);}
-
-function handleMsg(d){
-  if(d.type==='updateDriver')updateDriver(d.lat,d.lng);
-  if(d.type==='drawRoute')drawRoute(d.coords,d.color,d.dashed);
-  if(d.type==='clearRoute')clearRoute();
-  if(d.type==='addBlock')addBlock(d.id,d.lat,d.lng,d.radius);
-  if(d.type==='removeBlock')removeBlock(d.id);
-  if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status,d.phone);
-  if(d.type==='focusDriver')focusDriver();
-  if(d.type==='updateHospitals')renderHospitals(d.hospitals);
-  if(d.type==='setTheme'){map.removeLayer(tileLayer);tileLayer=L.tileLayer(d.dark?darkTile:lightTile,{maxZoom:19}).addTo(map);}
+function clearRoute() {
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+  if (rerouteLine) { map.removeLayer(rerouteLine); rerouteLine = null; }
 }
-window.addEventListener('message',function(e){try{handleMsg(JSON.parse(e.data));}catch(err){}});
-document.addEventListener('message',function(e){try{handleMsg(JSON.parse(e.data));}catch(err){}});
-</script></body></html>`;
+
+function addBlock(id, lat, lng, radius) {
+  blockLayers[id] = L.circle([lat, lng], { radius: radius, color: '#DC143C', fillColor: '#DC143C', fillOpacity: 0.1, weight: 2 }).addTo(map);
+}
+function removeBlock(id) {
+  if (blockLayers[id]) { map.removeLayer(blockLayers[id]); delete blockLayers[id]; }
+}
+
+function callCommunity(el) {
+  var p = el.getAttribute('data-phone');
+  var n = el.getAttribute('data-name');
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'communityCall', phone: p, name: n }));
+}
+
+function addCommunity(id, lat, lng, name, status, phone) {
+  if (communityMarkers[id]) { map.removeLayer(communityMarkers[id]); }
+  var active = status === 'active';
+  var color = active ? '#DC143C' : '#999';
+  var icon = L.divIcon({
+    className: '',
+    html: '<div style="background:#fff;border:2px solid ' + color + ';border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 1px 6px rgba(0,0,0,0.2)">' + String.fromCodePoint(0x1F464) + '</div>',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14]
+  });
+  var callBtnHtml = phone ? '<button onclick="callCommunity(this)" data-phone="' + phone + '" data-name="' + name + '" style="margin-top:8px;background:#DC143C;color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;width:100%">Call</button>' : '';
+  var statusLabel = active ? 'ACTIVE' : 'STANDBY';
+  var statusColor = active ? '#DC143C' : '#888';
+  var popupHtml = '<div style="font-family:sans-serif;padding:10px 12px;min-width:120px"><b style="font-size:13px;color:#1a1a2e">' + name + '</b><br><span style="color:' + statusColor + ';font-size:10px;font-weight:700">' + statusLabel + '</span>' + callBtnHtml + '</div>';
+  communityMarkers[id] = L.marker([lat, lng], { icon: icon }).addTo(map).bindPopup(popupHtml, { closeButton: false, maxWidth: 180, autoPan: false });
+}
+
+function focusDriver() {
+  map.setView(driverMarker.getLatLng(), 15);
+}
+
+function handleMsg(d) {
+  if (d.type === 'updateDriver') updateDriver(d.lat, d.lng);
+  if (d.type === 'drawRoute') drawRoute(d.coords, d.color, d.dashed);
+  if (d.type === 'clearRoute') clearRoute();
+  if (d.type === 'addBlock') addBlock(d.id, d.lat, d.lng, d.radius);
+  if (d.type === 'removeBlock') removeBlock(d.id);
+  if (d.type === 'addCommunity') addCommunity(d.id, d.lat, d.lng, d.name, d.status, d.phone);
+  if (d.type === 'focusDriver') focusDriver();
+  if (d.type === 'updateHospitals') renderHospitals(d.hospitals);
+  if (d.type === 'setTheme') {
+    map.removeLayer(tileLayer);
+    tileLayer = L.tileLayer(d.dark ? darkTile : lightTile, { maxZoom: 19 }).addTo(map);
+  }
+}
+window.addEventListener('message', function(e) { try { handleMsg(JSON.parse(e.data)); } catch(err) {} });
+document.addEventListener('message', function(e) { try { handleMsg(JSON.parse(e.data)); } catch(err) {} });
+</script>
+</body>
+</html>`;
 }
 
 export default function DriverMap() {
