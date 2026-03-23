@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert
 } from 'react-native';
-import MapView, { Marker, Polyline, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polyline, Circle, UrlTile, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
-import * as KeepAwake from 'expo-keep-awake';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useAuthStore, api } from '../../store/useStore';
 import { connectSocket, emitDriverLocation, listenToEvents } from '../../services/socket';
 
@@ -23,7 +23,7 @@ export default function DriverMap({ navigation }) {
   const mapRef = useRef(null);
 
   useEffect(() => {
-    KeepAwake.activateKeepAwakeAsync(); // Prevent screen sleep during dispatch
+    activateKeepAwakeAsync(); // Prevent screen sleep during dispatch
 
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -61,7 +61,7 @@ export default function DriverMap({ navigation }) {
     });
 
     return () => {
-      KeepAwake.deactivateKeepAwake();
+      deactivateKeepAwake();
       locationWatcher.current?.remove();
     };
   }, []);
@@ -129,11 +129,12 @@ export default function DriverMap({ navigation }) {
         mapType="none"
         customMapStyle={darkMapStyle}
       >
-        {/* OSM Tile Layer */}
-        <MapView.UrlTile
-          urlTemplate="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+        {/* CartoDB dark tiles — no {s} subdomain, react-native-maps uses direct URL */}
+        <UrlTile
+          urlTemplate="https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
           shouldReplaceMapContent={true}
           maximumZ={19}
+          flipY={false}
         />
 
         {/* Driver position */}
