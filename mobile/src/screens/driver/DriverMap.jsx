@@ -155,10 +155,14 @@ export default function DriverMap() {
   const [isFetchingHospitals, setIsFetchingHospitals] = useState(false);
   const [policeAlert, setPoliceAlert] = useState(null);
   const [communityCount, setCommunityCount] = useState(0);
+  const [communityMembers, setCommunityMembers] = useState([]);
+  const [showCommunityPanel, setShowCommunityPanel] = useState(false);
   const webRef = useRef(null);
   const locationWatcher = useRef(null);
-  const simIntervalRef = useRef(null);   // local movement simulation
-  const simPosRef = useRef(null);        // current simulated position
+  const simIntervalRef = useRef(null);
+  const simPosRef = useRef(null);
+  const simActiveRef = useRef(false);       // true while simulation runs — blocks GPS watcher from updating map
+  const currentLocationRef = useRef({ lat: 11.2588, lng: 75.7804 }); // always-fresh location for routing
   // Freeze initial HTML — never update source prop so WebView doesn't reload
   const initialHtmlRef = useRef(null);
   if (!initialHtmlRef.current) {
@@ -223,8 +227,13 @@ export default function DriverMap() {
         (loc) => {
           const newLoc = { lat: loc.coords.latitude, lng: loc.coords.longitude };
           setCurrentLocation(newLoc);
-          sendToMap({ type: 'updateDriver', lat: newLoc.lat, lng: newLoc.lng });
-          emitDriverLocation(newLoc.lat, newLoc.lng);
+          currentLocationRef.current = newLoc;
+          // Only update map marker and emit socket when NOT simulating
+          // (simulation drives the map during active routing — prevents flying marker)
+          if (!simActiveRef.current) {
+            sendToMap({ type: 'updateDriver', lat: newLoc.lat, lng: newLoc.lng });
+            emitDriverLocation(newLoc.lat, newLoc.lng);
+          }
         }
       );
     })();
@@ -267,11 +276,16 @@ export default function DriverMap() {
     setSelectedHospital(hospital);
     setShowHospList(false);
     setRouteActive(false);
+    setCommunityMembers([]);
+    setCommunityCount(0);
+    setShowCommunityPanel(false);
 
-    // Fetch route
+    // Always use the ref — never stale unlike state closure
+    const loc = currentLocationRef.current;
+
     try {
       const res = await api.post('/api/route', {
-        start: [currentLocation.lng, currentLocation.lat],
+        start: [loc.lng, loc.lat],
         end: [hospital.lng, hospital.lat]
       });
       if (res.data.route?.geometry?.coordinates) {
@@ -284,19 +298,15 @@ export default function DriverMap() {
         // Fetch community members near route
         try {
           const cRes = await api.get('/api/admin/community/near-route', {
-            params: {
-              fromLat: currentLocation.lat,
-              fromLng: currentLocation.lng,
-              toLat: hospital.lat,
-              toLng: hospital.lng
-            }
+            params: { fromLat: loc.lat, fromLng: loc.lng, toLat: hospital.lat, toLng: hospital.lng }
           });
-          const count = cRes.data.count || 0;
-          const membersDetail = cRes.data.members || [];
-          setCommunityCount(count);
+          const members = cRes.data.members || [];
+          setCommunityCount(members.length);
+          setCommunityMembers(members.slice(0, 5));
+          if (members.length > 0) setShowCommunityPanel(true);
 
-          // Push community members to map as pins
-          membersDetail.forEach(m => {
+          // Push pins to map
+          members.forEach(m => {
             if (m.location?.lat) {
               sendToMap({ type: 'addCommunity', id: m._id, lat: m.location.lat, lng: m.location.lng, name: m.name || 'Member', status: m.isActive ? 'active' : 'standby', phone: m.phone || '' });
             }
@@ -304,9 +314,8 @@ export default function DriverMap() {
         } catch {}
       }
     } catch (err) {
-      console.error('Route API Error:', err?.response?.data || err.message);
-      // Fallback straight line
-      sendToMap({ type: 'drawRoute', coords: [[currentLocation.lat, currentLocation.lng], [hospital.lat, hospital.lng]], color: '#4285f4', dashed: false });
+      // Fallback straight line using ref location
+      sendToMap({ type: 'drawRoute', coords: [[loc.lat, loc.lng], [hospital.lat, hospital.lng]], color: '#4285f4', dashed: false });
       setRoutePreviewing(true);
     }
   };
@@ -314,12 +323,11 @@ export default function DriverMap() {
   const startRoute = async () => {
     setRoutePreviewing(false);
     setRouteActive(true);
+    simActiveRef.current = true;          // block GPS watcher from animating map
     if (trafficBlocks.length > 0) setShowOptimize(true);
 
-    // Notify backend vehicle is active
-    try { await api.post('/api/vehicles/active', { location: currentLocation }); } catch {}
+    try { await api.post('/api/vehicles/active', { location: currentLocationRef.current }); } catch {}
 
-    // Dispatch — fetch real vehicle _id first
     try {
       const vRes = await api.get('/api/vehicles/active');
       const myVehicle = vRes.data.vehicles?.find(
@@ -332,11 +340,10 @@ export default function DriverMap() {
       });
     } catch {}
 
-    // ── Local simulation: move 🚑 on THIS driver's map (5 km/min = 0.25 km per 3s) ──
-    const STEP_KM = 0.25;  // 5×faster for demo visibility
-    const TICK_MS = 3000;
-    simPosRef.current = { lat: currentLocation.lat, lng: currentLocation.lng };
-
+    // Smoother simulation: smaller steps, faster ticks
+    const STEP_KM = 0.08;   // ~90m per tick → smoother
+    const TICK_MS = 1500;   // 1.5s ticks
+    simPosRef.current = { ...currentLocationRef.current };
     const destLat = selectedHospital.lat;
     const destLng = selectedHospital.lng;
 
@@ -356,23 +363,23 @@ export default function DriverMap() {
       const cur = simPosRef.current;
       const next = moveToward(cur.lat, cur.lng, destLat, destLng, STEP_KM);
       simPosRef.current = next;
+      currentLocationRef.current = next;
       setCurrentLocation(next);
       sendToMap({ type: 'updateDriver', lat: next.lat, lng: next.lng });
       emitDriverLocation(next.lat, next.lng);
-      // Stop when arrived
+
       const dLat2 = (destLat - next.lat) * Math.PI / 180;
       const dLng2 = (destLng - next.lng) * Math.PI / 180;
       const a2 = Math.sin(dLat2/2)**2 + Math.cos(next.lat*Math.PI/180)*Math.cos(destLat*Math.PI/180)*Math.sin(dLng2/2)**2;
       const remKm = 6371 * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1-a2));
-      if (remKm < 0.05) { // 50m
+      if (remKm < 0.05) {
         clearInterval(simIntervalRef.current);
         simIntervalRef.current = null;
+        simActiveRef.current = false;
         setRouteActive(false);
         setRoutePreviewing(false);
-        if (selectedHospital) {
-          emitArrived(selectedHospital.lat, selectedHospital.lng);
-        }
-        Alert.alert('Arrived', 'You have reached the destination (Simulated)');
+        if (selectedHospital) emitArrived(selectedHospital.lat, selectedHospital.lng);
+        Alert.alert('Arrived', 'You have reached the destination.');
       }
     }, TICK_MS);
   };
@@ -413,12 +420,15 @@ export default function DriverMap() {
 
   const cancelRoute = () => {
     if (simIntervalRef.current) { clearInterval(simIntervalRef.current); simIntervalRef.current = null; }
+    simActiveRef.current = false;
     setSelectedHospital(null);
     setRoutePreviewing(false);
     setRouteActive(false);
     setEta(null);
     setRouteDistance(null);
     setCommunityCount(0);
+    setCommunityMembers([]);
+    setShowCommunityPanel(false);
     setShowOptimize(false);
     sendToMap({ type: 'clearRoute' });
   };
@@ -553,10 +563,11 @@ export default function DriverMap() {
                 {routeDistance && <Text style={styles.routeDist}>• {routeDistance}</Text>}
                 <Text style={styles.routeType}>• {selectedHospital.type}</Text>
               </View>
-              {routePreviewing && communityCount > 0 && (
-                <Text style={styles.communityInfo}>👥 {communityCount} community members on route</Text>
-              )}
-              {routePreviewing && communityCount === 0 && (
+              {communityCount > 0 ? (
+                <TouchableOpacity onPress={() => setShowCommunityPanel(p => !p)}>
+                  <Text style={styles.communityInfo}>👥 {communityCount} members on route {showCommunityPanel ? '▲' : '▼'}</Text>
+                </TouchableOpacity>
+              ) : (
                 <Text style={styles.communityInfo}>⚠️ No community members on this route</Text>
               )}
             </View>
@@ -564,6 +575,31 @@ export default function DriverMap() {
               <Text style={{ color: '#ea4335', fontWeight: '700', fontSize: 13 }}>✕</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Community member list */}
+          {showCommunityPanel && communityMembers.length > 0 && (
+            <View style={styles.communityList}>
+              {communityMembers.slice(0, 3).map(m => (
+                <TouchableOpacity
+                  key={m._id}
+                  style={styles.communityRow}
+                  onPress={() => Alert.alert(`📞 Call ${m.name}`, m.phone, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: '📞 Call Now', onPress: () => Linking.openURL(`tel:${m.phone}`) }
+                  ])}
+                >
+                  <View style={styles.communityAvatar}>
+                    <Text style={{ color: '#4285f4', fontWeight: '900', fontSize: 13 }}>{(m.name||'?')[0].toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.communityName}>{m.name || 'Member'}</Text>
+                    <Text style={styles.communityPhone}>{m.phone || 'No number'}</Text>
+                  </View>
+                  <Text style={{ fontSize: 18 }}>📞</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <View style={styles.routeActions}>
             {routePreviewing ? (
@@ -695,10 +731,11 @@ const styles = StyleSheet.create({
   policeEmoji: { fontSize: 24 },
   policeTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
   policeSub: { color: 'rgba(255,255,255,0.9)', fontSize: 13 },
-  communityInfo: {
-    color: '#8ab4f8',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 6,
-  },
+  communityInfo: { color: '#8ab4f8', fontSize: 13, fontWeight: '600', marginTop: 6 },
+  // Community list panel
+  communityList: { backgroundColor: 'rgba(66,133,244,0.06)', borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(66,133,244,0.15)', overflow: 'hidden' },
+  communityRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(66,133,244,0.08)' },
+  communityAvatar: { width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(66,133,244,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(66,133,244,0.2)' },
+  communityName: { color: '#e2e2e6', fontSize: 13, fontWeight: '700' },
+  communityPhone: { color: '#8ab4f8', fontSize: 11, marginTop: 1 },
 });
