@@ -21,15 +21,20 @@ export function connectSocket(userId, handlers) {
   });
 
   // Register all event listeners per spec
-  socket.on('sos:new', handlers.handleSosNew);             // sos:new — new SOS
-  socket.on('sos:updated', handlers.handleSosUpdated);       // sos:updated — status change
-  socket.on('vehicle:active', handlers.handleVehicleActive); // vehicle:active — driver goes active
-  socket.on('vehicle:moved', handlers.handleVehicleMoved);   // vehicle:moved — GPS update
-  socket.on('vehicle:arrived', handlers.handleVehicleArrived || (() => {})); // vehicle:arrived
-  socket.on('traffic:block', handlers.handleTrafficBlock);   // traffic:block — new red zone
-  socket.on('traffic:clear', handlers.handleTrafficClear);   // traffic:clear — block removed
-  socket.on('broadcast:voice', handlers.handleVoiceBroadcast || (() => {})); // broadcast:voice
-  socket.on('police:alerted', handlers.handlePoliceAlerted || (() => {}));  // police:alerted — broadcast to all
+  socket.on('sos:new', handlers.handleSosNew);
+  socket.on('sos:updated', handlers.handleSosUpdated);
+  socket.on('vehicle:active', handlers.handleVehicleActive);
+  socket.on('vehicle:moved', handlers.handleVehicleMoved);
+  socket.on('vehicle:arrived', handlers.handleVehicleArrived || (() => {}));
+  socket.on('traffic:block', handlers.handleTrafficBlock);
+  socket.on('traffic:clear', handlers.handleTrafficClear);
+  socket.on('broadcast:voice', handlers.handleVoiceBroadcast || (() => {}));
+  socket.on('police:alerted', handlers.handlePoliceAlerted || (() => {}));
+  // Disaster events — always registered so DisasterPanel can use getSocket() safely
+  socket.on('disaster:created', handlers.handleDisasterCreated || (() => {}));
+  socket.on('disaster:team_assigned', handlers.handleDisasterAssigned || (() => {}));
+  socket.on('disaster:enroute', handlers.handleDisasterEnroute || (() => {}));
+  socket.on('disaster:arrived', handlers.handleDisasterArrived || (() => {}));
 
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected');

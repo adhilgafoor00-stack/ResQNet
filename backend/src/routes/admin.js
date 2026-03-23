@@ -128,4 +128,22 @@ router.patch('/community/:id/location', auth, async (req, res) => {
   }
 });
 
+/**
+ * PATCH /api/admin/community/:id/status — Toggle active/inactive
+ * Called by the community member themselves from the mobile app
+ */
+router.patch('/community/:id/status', auth, async (req, res) => {
+  try {
+    const { isActive } = req.body;
+    // Allow self-update or dispatcher
+    if (req.user.userId !== req.params.id && req.user.role !== 'dispatcher') {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+    await User.findByIdAndUpdate(req.params.id, { isActive });
+    res.json({ success: true, isActive });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

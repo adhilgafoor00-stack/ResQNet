@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../store/useStore';
-import { socket } from '../services/socket';
+import { getSocket } from '../services/socket';
 
 const TYPE_META = {
   flood:   { icon: '🌊', label: 'Flood',   color: '#1a73e8' },
@@ -75,30 +75,33 @@ export default function DisasterPanel() {
 
   // Real-time socket updates
   useEffect(() => {
-    socket.on('disaster:created', ({ event }) => {
+    const s = getSocket();
+    if (!s) return;
+
+    s.on('disaster:created', ({ event }) => {
       setEvents(prev => [event, ...prev]);
     });
-    socket.on('disaster:team_assigned', ({ eventId }) => {
+    s.on('disaster:team_assigned', ({ eventId }) => {
       setEvents(prev => prev.map(e => e._id === eventId ? { ...e, status: 'assigned' } : e));
       if (activeEvent?._id === eventId) setActiveEvent(ev => ({ ...ev, status: 'assigned' }));
     });
-    socket.on('disaster:enroute', ({ eventId }) => {
+    s.on('disaster:enroute', ({ eventId }) => {
       setEvents(prev => prev.map(e => e._id === eventId ? { ...e, status: 'enroute' } : e));
       if (activeEvent?._id === eventId) setActiveEvent(ev => ({ ...ev, status: 'enroute' }));
     });
-    socket.on('disaster:arrived', ({ eventId }) => {
+    s.on('disaster:arrived', ({ eventId }) => {
       setEvents(prev => prev.map(e => e._id === eventId ? { ...e, status: 'arrived' } : e));
       if (activeEvent?._id === eventId) setActiveEvent(ev => ({ ...ev, status: 'arrived' }));
     });
-    socket.on('vehicle:moved', ({ vehicleId, lat, lng, vehicleType }) => {
+    s.on('vehicle:moved', ({ vehicleId, lat, lng, vehicleType }) => {
       mapRef.current?.contentWindow?.postMessage(JSON.stringify({ type: 'vehicleMoved', id: vehicleId, lat, lng, vtype: vehicleType }), '*');
     });
     return () => {
-      socket.off('disaster:created');
-      socket.off('disaster:team_assigned');
-      socket.off('disaster:enroute');
-      socket.off('disaster:arrived');
-      socket.off('vehicle:moved');
+      s.off('disaster:created');
+      s.off('disaster:team_assigned');
+      s.off('disaster:enroute');
+      s.off('disaster:arrived');
+      s.off('vehicle:moved');
     };
   }, [activeEvent]);
 
