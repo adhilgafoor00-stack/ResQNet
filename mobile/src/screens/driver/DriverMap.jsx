@@ -39,6 +39,10 @@ html,body,#map{width:100%;height:100%;background:#0d0d0d}
 .hp-beds{font-size:11px;color:#666;margin-bottom:10px}
 .hp-btn{width:100%;background:#DC143C;color:#fff;border:none;padding:9px 0;border-radius:10px;font-weight:800;font-size:12px;letter-spacing:.5px;cursor:pointer;transition:background .15s}
 .hp-btn:hover{background:#b01030}
+.drv-wrap{position:relative;width:52px;height:52px}
+.drv-ring{position:absolute;top:0;left:0;width:52px;height:52px;border-radius:50%;background:rgba(220,20,60,0.25);animation:ring 1.4s ease-out infinite}
+.drv-core{position:absolute;top:6px;left:6px;width:40px;height:40px;background:#DC143C;border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 16px rgba(220,20,60,0.55)}
+@keyframes ring{0%{transform:scale(1);opacity:.8}100%{transform:scale(1.8);opacity:0}}
 </style>
 </head><body><div id="map"></div>
 <script>
@@ -47,8 +51,8 @@ var darkTile='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 var lightTile='https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png';
 var tileLayer=L.tileLayer(lightTile,{maxZoom:19}).addTo(map);
 
-// Premium crimson ambulance marker with pulse ring
-var driverIcon=L.divIcon({className:'',html:'<div style="position:relative;width:52px;height:52px"><div style="position:absolute;top:0;left:0;width:52px;height:52px;border-radius:50%;background:rgba(220,20,60,0.2);animation:pulse 1.4s ease-out infinite"></div><div style="position:absolute;top:6px;left:6px;width:40px;height:40px;background:#DC143C;border:3px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 16px rgba(220,20,60,0.6)">🚑</div></div><style>@keyframes pulse{0%{transform:scale(1);opacity:.8}100%{transform:scale(1.7);opacity:0}}</style>',iconSize:[52,52],iconAnchor:[26,26]});
+// Ambulance marker – CSS classes defined in <style> block (no curly braces in JS string)
+var driverIcon=L.divIcon({className:'',html:'<div class="drv-wrap"><div class="drv-ring"></div><div class="drv-core">🚑</div></div>',iconSize:[52,52],iconAnchor:[26,26]});
 var driverMarker=L.marker([${lat},${lng}],{icon:driverIcon,zIndexOffset:1000}).addTo(map);
 
 var hospitals=${hospitalsJSON};
