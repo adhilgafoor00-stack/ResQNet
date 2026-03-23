@@ -11,23 +11,17 @@ import { connectSocket, emitDriverLocation, listenToEvents } from '../../service
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-// Nearest & Distant specialized hospitals (Kozhikode + surrounding for realistic routing)
-const HOSPITALS = [
+const FALLBACK_HOSPITALS = [
   { id: 'h1', name: 'Baby Memorial Hospital', lat: 11.2615, lng: 75.7830, type: 'Multi-specialty', beds: 350 },
   { id: 'h2', name: 'ASTER MIMS Kozhikode', lat: 11.2735, lng: 75.7784, type: 'Super-specialty', beds: 750 },
   { id: 'h3', name: 'Govt. Medical College Kozhikode', lat: 11.2580, lng: 75.7700, type: 'Government', beds: 1200 },
   { id: 'h4', name: 'Meitra Hospital (Premium)', lat: 11.2858, lng: 75.7742, type: 'Super-specialty', beds: 220 },
   { id: 'h5', name: 'Malabar Institute of Med Sci', lat: 11.2300, lng: 75.8000, type: 'Trauma Care', beds: 400 },
-  { id: 'h6', name: 'KIMS Al Shifa (Perinthalmanna)', lat: 10.9760, lng: 76.2230, type: 'Super-specialty', beds: 600 }, // Distant
-  { id: 'h7', name: 'Amrita Hospital (Kochi)', lat: 10.0384, lng: 76.2957, type: 'Super-specialty', beds: 1300 }, // Very distant
-  { id: 'h8', name: 'Aster Medcity (Kochi)', lat: 10.0540, lng: 76.2690, type: 'Premium Care', beds: 670 }, // Very distant
-  { id: 'h9', name: 'Rajagiri Hospital (Aluva)', lat: 10.1030, lng: 76.3680, type: 'Multi-specialty', beds: 500 }, // Very distant
-  { id: 'h10', name: 'Sree Chitra Tirunal (Trivandrum)', lat: 8.5241, lng: 76.9366, type: 'Institute of Medical Sci', beds: 253 }, // Extreme distance
 ];
 
-function getMapHTML(lat, lng) {
-  // Generate hospital markers JSON
-  const hospitalsJSON = JSON.stringify(HOSPITALS);
+function getMapHTML(lat, lng, hospitalsData) {
+  // Generate hospital markers JSON dynamically
+  const hospitalsJSON = JSON.stringify(hospitalsData || FALLBACK_HOSPITALS);
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
@@ -50,19 +44,28 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{max
 var driverIcon=L.divIcon({className:'',html:'<div style="background:#4285f4;border:3px solid #fff;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 2px 12px rgba(66,133,244,0.5)">🚑</div>',iconSize:[44,44],iconAnchor:[22,22]});
 var driverMarker=L.marker([${lat},${lng}],{icon:driverIcon,zIndexOffset:1000}).addTo(map);
 
-// Hospital markers
+// Hospital markers from prop
 var hospitals=${hospitalsJSON};
 var hospitalMarkers={};
-hospitals.forEach(function(h){
-  var icon=L.divIcon({
-    className:'',
-    html:'<div style="background:#fff;border:2px solid #ea4335;border-radius:8px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3)">🏥</div>',
-    iconSize:[32,32],iconAnchor:[16,32]
+
+function renderHospitals(newHospitals) {
+  // Clear old
+  for(var k in hospitalMarkers) map.removeLayer(hospitalMarkers[k]);
+  hospitalMarkers={};
+  hospitals = newHospitals;
+  
+  hospitals.forEach(function(h){
+    var icon=L.divIcon({
+      className:'',
+      html:'<div style="background:#fff;border:2px solid #ea4335;border-radius:8px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3)">🏥</div>',
+      iconSize:[32,32],iconAnchor:[16,32]
+    });
+    var m=L.marker([h.lat,h.lng],{icon:icon}).addTo(map);
+    m.bindPopup('<div class="hospital-popup"><b>'+h.name+'</b><br><span class="type">'+h.type+' • '+(h.beds||'N/A')+' beds</span><br><button class="dir-btn" onclick="selectHospital(\\''+h.id+'\\')">🚗 Directions</button></div>',{closeButton:true,maxWidth:220});
+    hospitalMarkers[h.id]=m;
   });
-  var m=L.marker([h.lat,h.lng],{icon:icon}).addTo(map);
-  m.bindPopup('<div class="hospital-popup"><b>'+h.name+'</b><br><span class="type">'+h.type+' • '+h.beds+' beds</span><br><button class="dir-btn" onclick="selectHospital(\\''+h.id+'\\')">🚗 Directions</button></div>',{closeButton:true,maxWidth:220});
-  hospitalMarkers[h.id]=m;
-});
+}
+renderHospitals(hospitals); // initial render
 
 var routeLine=null;
 var rerouteLine=null;
@@ -113,6 +116,7 @@ window.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
   if(d.type==='removeBlock')removeBlock(d.id);
   if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status);
   if(d.type==='focusDriver')focusDriver();
+  if(d.type==='updateHospitals')renderHospitals(d.hospitals);
 }catch(err){}});
 document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
   if(d.type==='updateDriver')updateDriver(d.lat,d.lng);
@@ -122,6 +126,7 @@ document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
   if(d.type==='removeBlock')removeBlock(d.id);
   if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status);
   if(d.type==='focusDriver')focusDriver();
+  if(d.type==='updateHospitals')renderHospitals(d.hospitals);
 }catch(err){}});
 </script></body></html>`;
 }
@@ -129,6 +134,7 @@ document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
 export default function DriverMap() {
   const { user } = useAuthStore();
   const [currentLocation, setCurrentLocation] = useState({ lat: 11.2588, lng: 75.7804 });
+  const [hospitals, setHospitals] = useState(FALLBACK_HOSPITALS);
   const [selectedHospital, setSelectedHospital] = useState(null);
   const [routeActive, setRouteActive] = useState(false);
   const [showOptimize, setShowOptimize] = useState(false);
@@ -136,6 +142,7 @@ export default function DriverMap() {
   const [eta, setEta] = useState(null);
   const [routeDistance, setRouteDistance] = useState(null);
   const [showHospList, setShowHospList] = useState(false);
+  const [isFetchingHospitals, setIsFetchingHospitals] = useState(false);
   const webRef = useRef(null);
   const locationWatcher = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -143,6 +150,37 @@ export default function DriverMap() {
   const sendToMap = useCallback((data) => {
     webRef.current?.postMessage(JSON.stringify(data));
   }, []);
+
+  const fetchNearbyHospitals = async (lat, lng) => {
+    setIsFetchingHospitals(true);
+    try {
+      const radius = 20000; // 20km search radius
+      const query = `[out:json];node["amenity"="hospital"](around:${radius},${lat},${lng});out 15;`;
+      const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      const parsedHospitals = data.elements
+        .filter(e => e.tags && e.tags.name)
+        .map(e => ({
+          id: \`osm-\${e.id}\`,
+          name: e.tags.name,
+          lat: e.lat,
+          lng: e.lon, // Overpass uses lon
+          type: e.tags.healthcare || e.tags.emergency === 'yes' ? 'Emergency' : 'Hospital',
+          beds: e.tags.capacity || 'Unknown'
+        }));
+      
+      if (parsedHospitals.length > 0) {
+        setHospitals(parsedHospitals);
+        sendToMap({ type: 'updateHospitals', hospitals: parsedHospitals });
+      }
+    } catch (err) {
+      console.error('Overpass API error:', err);
+    } finally {
+      setIsFetchingHospitals(false);
+    }
+  };
 
   // Pulse animation
   useEffect(() => {
@@ -160,6 +198,9 @@ export default function DriverMap() {
       if (status !== 'granted') return Alert.alert('Permission needed', 'Location required');
       const loc = await Location.getCurrentPositionAsync({});
       setCurrentLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+      
+      // Fetch dynamic hospitals based on real location once
+      fetchNearbyHospitals(loc.coords.latitude, loc.coords.longitude);
 
       locationWatcher.current = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, timeInterval: 3000, distanceInterval: 10 },
@@ -286,7 +327,7 @@ export default function DriverMap() {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.type === 'hospitalSelected') {
-        const h = HOSPITALS.find(h => h.id === data.id);
+        const h = hospitals.find(h => h.id === data.id);
         if (h) selectHospital(h);
       }
     } catch {}
@@ -336,7 +377,7 @@ export default function DriverMap() {
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Nearby Hospitals</Text>
           <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={false}>
-            {HOSPITALS.map(h => (
+            {hospitals.map(h => (
               <TouchableOpacity key={h.id} style={styles.hospRow} onPress={() => selectHospital(h)} activeOpacity={0.7}>
                 <View style={styles.hospIcon}>
                   <Text style={{ fontSize: 18 }}>🏥</Text>
