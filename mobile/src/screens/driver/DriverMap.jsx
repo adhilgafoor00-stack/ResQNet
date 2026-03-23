@@ -381,7 +381,7 @@ export default function DriverMap() {
 
       {/* Optimize route prompt */}
       {showOptimize && (
-        <View style={styles.optimizeCard}>
+        <View style={[styles.optimizeCard, { bottom: selectedHospital ? 160 : 20 }]}>
           <Text style={styles.optimizeTitle}>⚠️ Traffic blocks on route</Text>
           <Text style={styles.optimizeSub}>{trafficBlocks.length} block(s) detected. Want to find an alternative?</Text>
           <View style={styles.optimizeActions}>
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
   shareBtn: { backgroundColor: 'rgba(66,133,244,0.1)', borderRadius: 50, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(66,133,244,0.2)', minHeight: 52 },
   shareText: { color: '#8ab4f8', fontWeight: '700', fontSize: 13 },
   // Optimize
-  optimizeCard: { position: 'absolute', bottom: selectedHospital ? 160 : 20, left: 12, right: 12, backgroundColor: '#212429', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(234,67,53,0.3)' },
+  optimizeCard: { position: 'absolute', left: 12, right: 12, backgroundColor: '#212429', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: 'rgba(234,67,53,0.3)' },
   optimizeTitle: { color: '#ea4335', fontSize: 14, fontWeight: '800', marginBottom: 4 },
   optimizeSub: { color: '#9aa0a6', fontSize: 12, marginBottom: 12 },
   optimizeActions: { flexDirection: 'row', gap: 10 },
