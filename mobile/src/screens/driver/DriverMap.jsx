@@ -38,7 +38,9 @@ html,body,#map{width:100%;height:100%;background:#121316}
 </head><body><div id="map"></div>
 <script>
 var map=L.map('map',{zoomControl:true}).setView([${lat},${lng}],14);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+var darkTile='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+var lightTile='https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png';
+var tileLayer=L.tileLayer(darkTile,{maxZoom:19}).addTo(map);
 
 // Driver marker
 var driverIcon=L.divIcon({className:'',html:'<div style="background:#4285f4;border:3px solid #fff;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 2px 12px rgba(66,133,244,0.5)">🚑</div>',iconSize:[44,44],iconAnchor:[22,22]});
@@ -123,6 +125,7 @@ window.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
   if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status,d.phone);
   if(d.type==='focusDriver')focusDriver();
   if(d.type==='updateHospitals')renderHospitals(d.hospitals);
+  if(d.type==='setTheme'){map.removeLayer(tileLayer);tileLayer=L.tileLayer(d.dark?darkTile:lightTile,{maxZoom:19}).addTo(map);}
 }catch(err){}});
 document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
   if(d.type==='updateDriver')updateDriver(d.lat,d.lng);
@@ -133,6 +136,7 @@ document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
   if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status,d.phone);
   if(d.type==='focusDriver')focusDriver();
   if(d.type==='updateHospitals')renderHospitals(d.hospitals);
+  if(d.type==='setTheme'){map.removeLayer(tileLayer);tileLayer=L.tileLayer(d.dark?darkTile:lightTile,{maxZoom:19}).addTo(map);}
 }catch(err){}});
 </script></body></html>`;
 }
@@ -157,6 +161,8 @@ export default function DriverMap() {
   const [communityCount, setCommunityCount] = useState(0);
   const [communityMembers, setCommunityMembers] = useState([]);
   const [showCommunityPanel, setShowCommunityPanel] = useState(false);
+  const [isDark, setIsDark] = useState(true); // dark/light map theme
+  const [gettingLocation, setGettingLocation] = useState(false);
   const webRef = useRef(null);
   const locationWatcher = useRef(null);
   const simIntervalRef = useRef(null);
@@ -195,10 +201,36 @@ export default function DriverMap() {
 
   const setDemoPosition = (lat, lng) => {
     setCurrentLocation({ lat, lng });
+    currentLocationRef.current = { lat, lng };
     sendToMap({ type: 'updateDriver', lat, lng });
     sendToMap({ type: 'focusDriver' });
     fetchNearbyHospitals(lat, lng);
     setShowDemoSetter(false);
+  };
+
+  // Toggle dark/light tile layer
+  const toggleTheme = () => {
+    const newDark = !isDark;
+    setIsDark(newDark);
+    sendToMap({ type: 'setTheme', dark: newDark });
+  };
+
+  // Go to real GPS position — used by the 📍 button
+  const goToGPS = async () => {
+    setGettingLocation(true);
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const newLoc = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setCurrentLocation(newLoc);
+      currentLocationRef.current = newLoc;
+      sendToMap({ type: 'updateDriver', lat: newLoc.lat, lng: newLoc.lng });
+      sendToMap({ type: 'focusDriver' });
+      fetchNearbyHospitals(newLoc.lat, newLoc.lng);
+    } catch {
+      sendToMap({ type: 'focusDriver' }); // fallback: just pan to current marker
+    } finally {
+      setGettingLocation(false);
+    }
   };
 
 
@@ -280,8 +312,15 @@ export default function DriverMap() {
     setCommunityCount(0);
     setShowCommunityPanel(false);
 
-    // Always use the ref — never stale unlike state closure
-    const loc = currentLocationRef.current;
+    // Get fresh GPS position before routing so we never use stale/fallback coords
+    let loc = currentLocationRef.current;
+    try {
+      const freshLoc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      loc = { lat: freshLoc.coords.latitude, lng: freshLoc.coords.longitude };
+      setCurrentLocation(loc);
+      currentLocationRef.current = loc;
+      sendToMap({ type: 'updateDriver', lat: loc.lat, lng: loc.lng });
+    } catch { /* use last known */ }
 
     try {
       const res = await api.post('/api/route', {
@@ -295,7 +334,7 @@ export default function DriverMap() {
         if (res.data.duration) setEta(`${Math.ceil(res.data.duration / 60)} min`);
         if (res.data.distance) setRouteDistance(`${(res.data.distance / 1000).toFixed(1)} km`);
 
-        // Fetch community members near route
+        // Fetch community members near route (after route is drawn + map fitted)
         try {
           const cRes = await api.get('/api/admin/community/near-route', {
             params: { fromLat: loc.lat, fromLng: loc.lng, toLat: hospital.lat, toLng: hospital.lng }
@@ -304,8 +343,7 @@ export default function DriverMap() {
           setCommunityCount(members.length);
           setCommunityMembers(members.slice(0, 5));
           if (members.length > 0) setShowCommunityPanel(true);
-
-          // Push pins to map
+          // Add pins to map WITHOUT re-fitting bounds
           members.forEach(m => {
             if (m.location?.lat) {
               sendToMap({ type: 'addCommunity', id: m._id, lat: m.location.lat, lng: m.location.lng, name: m.name || 'Member', status: m.isActive ? 'active' : 'standby', phone: m.phone || '' });
@@ -313,8 +351,7 @@ export default function DriverMap() {
           });
         } catch {}
       }
-    } catch (err) {
-      // Fallback straight line using ref location
+    } catch {
       sendToMap({ type: 'drawRoute', coords: [[loc.lat, loc.lng], [hospital.lat, hospital.lng]], color: '#4285f4', dashed: false });
       setRoutePreviewing(true);
     }
@@ -477,12 +514,19 @@ export default function DriverMap() {
       />
 
       {/* Top bar — status + list toggle */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, !isDark && { backgroundColor: 'transparent' }]}>
         <View style={styles.driverChip}>
           <Animated.View style={[styles.liveDot, { opacity: pulseAnim }]} />
           <Text style={styles.chipText}>🚑 {user?.vehicleType?.toUpperCase() || 'AMBULANCE'}</Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
+          {/* Dark / Light toggle */}
+          <TouchableOpacity
+            style={[styles.listToggle, { paddingHorizontal: 12 }]}
+            onPress={toggleTheme}
+          >
+            <Text style={{ fontSize: 16 }}>{isDark ? '☀️' : '🌙'}</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.listToggle} onPress={() => setShowDemoSetter(!showDemoSetter)}>
             <Text style={{ fontSize: 13 }}>📍 Test</Text>
           </TouchableOpacity>
@@ -522,9 +566,13 @@ export default function DriverMap() {
         </View>
       )}
 
-      {/* My Location button */}
-      <TouchableOpacity style={styles.myLocBtn} onPress={() => sendToMap({ type: 'focusDriver' })}>
-        <Text style={{ fontSize: 18 }}>📍</Text>
+      {/* My Location button — fetches real GPS */}
+      <TouchableOpacity
+        style={[styles.myLocBtn, isDark ? {} : { backgroundColor: 'rgba(255,255,255,0.9)', borderColor: '#ddd' }]}
+        onPress={goToGPS}
+        disabled={gettingLocation}
+      >
+        <Text style={{ fontSize: 18 }}>{gettingLocation ? '⏳' : '📍'}</Text>
       </TouchableOpacity>
 
       {/* Hospital List (Google Maps-style bottom sheet) */}
