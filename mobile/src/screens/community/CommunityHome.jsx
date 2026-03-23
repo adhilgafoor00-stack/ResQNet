@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Vibration, Animated, Dimensions, Switch, StatusBar,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { useAuthStore, api } from '../../store/useStore';
@@ -96,7 +97,8 @@ export default function CommunityHome({ navigation }) {
   const [alertHistory, setAlertHistory] = useState([]);
   const [distance, setDistance] = useState(null);
   const [cleared, setCleared] = useState(false);
-  const [isActive, setIsActive] = useState(true);
+  // Initialize from stored value (user.isActive from login, overridden by AsyncStorage cache)
+  const [isActive, setIsActive] = useState(user?.isActive !== false);
   const [togglingActive, setTogglingActive] = useState(false);
 
   const webRef = useRef(null);
@@ -123,26 +125,22 @@ export default function CommunityHome({ navigation }) {
     ]).start();
   }, []);
 
-  // Fetch user active status
+  // Load persisted toggle state from AsyncStorage (survives app restarts)
   useEffect(() => {
-    if (user?._id) {
-      api.get(`/api/admin/community`).then(res => {
-        const me = (res.data.members || []).find(m => m._id === user._id);
-        if (me) setIsActive(me.isActive !== false);
-      }).catch(() => {});
-    }
-  }, [user?._id]);
+    AsyncStorage.getItem('community_active_status').then(val => {
+      if (val !== null) setIsActive(val === 'true');
+    }).catch(() => {});
+  }, []);
 
-  // Toggle active status
+  // Toggle active status — updates backend + persists locally
   const toggleActive = useCallback(async (val) => {
-    setIsActive(val);
-    setTogglingActive(true);
+    setIsActive(val); // Optimistic update
     try {
+      await AsyncStorage.setItem('community_active_status', String(val));
       await api.patch(`/api/admin/community/${user._id}/status`, { isActive: val });
     } catch {
-      setIsActive(!val); // revert on failure
-    } finally {
-      setTogglingActive(false);
+      // On backend failure keep local state (don't spring back)
+      // Only revert if AsyncStorage also fails — unlikely
     }
   }, [user?._id]);
 
