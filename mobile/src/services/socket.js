@@ -40,6 +40,7 @@ export function listenToEvents(handlers) {
   socket.on('broadcast:voice', handlers.onVoiceBroadcast || (() => {})); // broadcast:voice — play audio
   socket.on('traffic:block', handlers.onTrafficBlock || (() => {}));     // traffic:block
   socket.on('traffic:clear', handlers.onTrafficClear || (() => {}));     // traffic:clear
+  socket.on('police:alerted', handlers.onPoliceAlerted || (() => {}));  // police:alerted
 }
 
 export function emitDriverLocation(lat, lng) {
@@ -51,6 +52,12 @@ export function emitDriverLocation(lat, lng) {
 export function emitCommunityPosition(lat, lng) {
   if (socket?.connected) {
     socket.emit('community:position', { lat, lng }); // community:position
+  }
+}
+
+export function emitArrived(lat, lng) {
+  if (socket?.connected) {
+    socket.emit('vehicle:arrived', { lat, lng });
   }
 }
 

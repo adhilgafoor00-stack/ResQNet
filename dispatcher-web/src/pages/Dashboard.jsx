@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [showDispatchModal, setShowDispatchModal] = useState(false);
   const [selectedVehicleForDispatch, setSelectedVehicleForDispatch] = useState(null);
   const [trafficMode, setTrafficMode] = useState(false);
+  const [policeAlertBanner, setPoliceAlertBanner] = useState(false);
 
   useEffect(() => {
     // Fetch initial data
@@ -40,6 +41,10 @@ export default function Dashboard() {
       handleVehicleMoved,
       handleTrafficBlock,
       handleTrafficClear,
+      handlePoliceAlerted: () => {
+        setPoliceAlertBanner(true);
+        setTimeout(() => setPoliceAlertBanner(false), 4000);
+      },
     });
 
     return () => {
@@ -87,6 +92,27 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {/* Police Alert Confirmation Banner */}
+      {policeAlertBanner && (
+        <div style={{
+          position: 'fixed',
+          top: 64,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'var(--color-safe)',
+          color: '#0F1923',
+          padding: '12px 28px',
+          borderRadius: 'var(--radius-pill)',
+          fontWeight: 700,
+          fontSize: 14,
+          zIndex: 5000,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+          animation: 'slideUp 0.3s ease-out'
+        }} className="toast">
+          🚔 Traffic Police Alerted — Road clearing broadcast sent
+        </div>
+      )}
 
       {/* Left Sidebar — Active SOS List */}
       <div className="sidebar-left">

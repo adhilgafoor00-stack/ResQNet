@@ -29,6 +29,7 @@ export function connectSocket(userId, handlers) {
   socket.on('traffic:block', handlers.handleTrafficBlock);   // traffic:block — new red zone
   socket.on('traffic:clear', handlers.handleTrafficClear);   // traffic:clear — block removed
   socket.on('broadcast:voice', handlers.handleVoiceBroadcast || (() => {})); // broadcast:voice
+  socket.on('police:alerted', handlers.handlePoliceAlerted || (() => {}));  // police:alerted — broadcast to all
 
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected');
@@ -50,4 +51,10 @@ export function disconnectSocket() {
 
 export function getSocket() {
   return socket;
+}
+
+export function emitPoliceAlert(alertedBy) {
+  if (socket) {
+    socket.emit('police:alert', { alertedBy });
+  }
 }

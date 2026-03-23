@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView,
-  Animated, Dimensions, TextInput
+  Animated, Dimensions, TextInput, Vibration
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useAuthStore, api } from '../../store/useStore';
-import { connectSocket, emitDriverLocation, listenToEvents } from '../../services/socket';
+import { connectSocket, emitDriverLocation, listenToEvents, emitArrived } from '../../services/socket';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -147,8 +147,17 @@ export default function DriverMap() {
   const [demoLat, setDemoLat] = useState('');
   const [demoLng, setDemoLng] = useState('');
   const [isFetchingHospitals, setIsFetchingHospitals] = useState(false);
+  const [policeAlert, setPoliceAlert] = useState(null);
+  const [communityCount, setCommunityCount] = useState(0);
   const webRef = useRef(null);
   const locationWatcher = useRef(null);
+  const simIntervalRef = useRef(null);   // local movement simulation
+  const simPosRef = useRef(null);        // current simulated position
+  // Freeze initial HTML — never update source prop so WebView doesn't reload
+  const initialHtmlRef = useRef(null);
+  if (!initialHtmlRef.current) {
+    initialHtmlRef.current = getMapHTML(currentLocation.lat, currentLocation.lng, FALLBACK_HOSPITALS);
+  }
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const sendToMap = useCallback((data) => {
@@ -158,39 +167,17 @@ export default function DriverMap() {
   const fetchNearbyHospitals = async (lat, lng) => {
     setIsFetchingHospitals(true);
     try {
-      const radius = 20000; // 20km search radius
-      const query = `[out:json];node["amenity"="hospital"](around:${radius},${lat},${lng});out 15;`;
-      const res = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`
+      const res = await api.get('/api/route/hospitals', {
+        params: { lat, lng, radius: 20000 }
       });
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        console.warn('Overpass API returned non-JSON (usually a server busy HTML page). Using fallback hospitals.');
-        return; // Retain current/fallback hospitals
-      }
-      
-      const parsedHospitals = data.elements
-        .filter(e => e.tags && e.tags.name)
-        .map(e => ({
-          id: `osm-${e.id}`,
-          name: e.tags.name,
-          lat: e.lat,
-          lng: e.lon, // Overpass uses lon
-          type: e.tags.healthcare || e.tags.emergency === 'yes' ? 'Emergency' : 'Hospital',
-          beds: e.tags.capacity || 'Unknown'
-        }));
-      
-      if (parsedHospitals.length > 0) {
-        setHospitals(parsedHospitals);
-        sendToMap({ type: 'updateHospitals', hospitals: parsedHospitals });
+      const fetched = res.data.hospitals || [];
+      if (fetched.length > 0) {
+        setHospitals(fetched);
+        sendToMap({ type: 'updateHospitals', hospitals: fetched });
       }
     } catch (err) {
-      console.error('Overpass API error:', err);
+      console.warn('[Hospitals] Backend fetch failed, using fallback:', err.message);
+      // FALLBACK_HOSPITALS is already set in initial state
     } finally {
       setIsFetchingHospitals(false);
     }
@@ -247,9 +234,18 @@ export default function DriverMap() {
         setTrafficBlocks(prev => prev.filter(b => b._id !== data.blockId));
         sendToMap({ type: 'removeBlock', id: data.blockId });
       },
+      onPoliceAlerted: (data) => {
+        setPoliceAlert(data);
+        Vibration.vibrate([0, 200, 100, 200]);
+        setTimeout(() => setPoliceAlert(null), 6000);
+      },
     });
     loadTrafficBlocks();
-    return () => { deactivateKeepAwake(); locationWatcher.current?.remove(); };
+    return () => {
+      deactivateKeepAwake();
+      locationWatcher.current?.remove();
+      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+    };
   }, []);
 
   const loadTrafficBlocks = async () => {
@@ -278,6 +274,28 @@ export default function DriverMap() {
         setRoutePreviewing(true);
         if (res.data.duration) setEta(`${Math.ceil(res.data.duration / 60)} min`);
         if (res.data.distance) setRouteDistance(`${(res.data.distance / 1000).toFixed(1)} km`);
+
+        // Fetch community members near route
+        try {
+          const cRes = await api.get('/api/admin/community/near-route', {
+            params: {
+              fromLat: currentLocation.lat,
+              fromLng: currentLocation.lng,
+              toLat: hospital.lat,
+              toLng: hospital.lng
+            }
+          });
+          const count = cRes.data.count || 0;
+          const membersDetail = cRes.data.members || [];
+          setCommunityCount(count);
+
+          // Push community members to map as pins
+          membersDetail.forEach(m => {
+            if (m.location?.lat) {
+              sendToMap({ type: 'addCommunity', id: m._id, lat: m.location.lat, lng: m.location.lng, name: m.name || 'Member', status: m.isActive ? 'active' : 'standby' });
+            }
+          });
+        } catch {}
       }
     } catch (err) {
       console.error('Route API Error:', err?.response?.data || err.message);
@@ -291,16 +309,68 @@ export default function DriverMap() {
     setRoutePreviewing(false);
     setRouteActive(true);
     if (trafficBlocks.length > 0) setShowOptimize(true);
-    
-    // Notify backend and community
+
+    // Notify backend vehicle is active
     try { await api.post('/api/vehicles/active', { location: currentLocation }); } catch {}
+
+    // Dispatch — fetch real vehicle _id first
     try {
+      const vRes = await api.get('/api/vehicles/active');
+      const myVehicle = vRes.data.vehicles?.find(
+        v => v.driverId?.toString() === user._id || v.driver?.toString() === user._id
+      );
+      const vehicleId = myVehicle?._id || user._id;
       await api.post('/api/dispatch', {
-        vehicleId: user._id,
+        vehicleId,
         destination: { lat: selectedHospital.lat, lng: selectedHospital.lng, name: selectedHospital.name }
       });
     } catch {}
+
+    // ── Local simulation: move 🚑 on THIS driver's map (5 km/min = 0.25 km per 3s) ──
+    const STEP_KM = 0.25;  // 5×faster for demo visibility
+    const TICK_MS = 3000;
+    simPosRef.current = { lat: currentLocation.lat, lng: currentLocation.lng };
+
+    const destLat = selectedHospital.lat;
+    const destLng = selectedHospital.lng;
+
+    function moveToward(lat, lng, tLat, tLng, stepKm) {
+      const R = 6371;
+      const dLat = (tLat - lat) * Math.PI / 180;
+      const dLng = (tLng - lng) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180)*Math.cos(tLat*Math.PI/180)*Math.sin(dLng/2)**2;
+      const totalKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      if (totalKm <= stepKm) return { lat: tLat, lng: tLng };
+      const ratio = stepKm / totalKm;
+      return { lat: lat + (tLat - lat) * ratio, lng: lng + (tLng - lng) * ratio };
+    }
+
+    if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+    simIntervalRef.current = setInterval(() => {
+      const cur = simPosRef.current;
+      const next = moveToward(cur.lat, cur.lng, destLat, destLng, STEP_KM);
+      simPosRef.current = next;
+      setCurrentLocation(next);
+      sendToMap({ type: 'updateDriver', lat: next.lat, lng: next.lng });
+      emitDriverLocation(next.lat, next.lng);
+      // Stop when arrived
+      const dLat2 = (destLat - next.lat) * Math.PI / 180;
+      const dLng2 = (destLng - next.lng) * Math.PI / 180;
+      const a2 = Math.sin(dLat2/2)**2 + Math.cos(next.lat*Math.PI/180)*Math.cos(destLat*Math.PI/180)*Math.sin(dLng2/2)**2;
+      const remKm = 6371 * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1-a2));
+      if (remKm < 0.05) { // 50m
+        clearInterval(simIntervalRef.current);
+        simIntervalRef.current = null;
+        setRouteActive(false);
+        setRoutePreviewing(false);
+        if (selectedHospital) {
+          emitArrived(selectedHospital.lat, selectedHospital.lng);
+        }
+        Alert.alert('Arrived', 'You have reached the destination (Simulated)');
+      }
+    }, TICK_MS);
   };
+
 
   const optimizeRoute = async () => {
     if (!selectedHospital) return;
@@ -327,29 +397,26 @@ export default function DriverMap() {
     } catch { Alert.alert('Route unchanged', 'Proceed with caution.'); }
   };
 
-  const handleArrived = async () => {
-    try {
-      const vehicles = await api.get('/api/vehicles/active');
-      const myVehicle = vehicles.data.vehicles?.find(v => v.driver?.toString() === user._id);
-      if (myVehicle) await api.patch(`/api/vehicles/${myVehicle._id}/arrived`);
-      Alert.alert('✅ Arrived', 'Dispatcher notified.');
-      setRouteActive(false);
-      setSelectedHospital(null);
-      setEta(null);
-      setRouteDistance(null);
-      sendToMap({ type: 'clearRoute' });
-    } catch { Alert.alert('Arrived', 'Logged.'); }
+  const handleArrived = () => {
+    if (selectedHospital) {
+      emitArrived(selectedHospital.lat, selectedHospital.lng);
+    }
+    cancelRoute();
+    Alert.alert('Arrived', 'You have reached the destination.');
   };
 
   const cancelRoute = () => {
+    if (simIntervalRef.current) { clearInterval(simIntervalRef.current); simIntervalRef.current = null; }
     setSelectedHospital(null);
     setRoutePreviewing(false);
     setRouteActive(false);
     setEta(null);
     setRouteDistance(null);
+    setCommunityCount(0);
     setShowOptimize(false);
     sendToMap({ type: 'clearRoute' });
   };
+
 
   // Handle messages from WebView (hospital popup click)
   const onWebViewMessage = (event) => {
@@ -372,7 +439,7 @@ export default function DriverMap() {
       {/* Full-screen map with hospitals as markers */}
       <WebView
         ref={webRef}
-        source={{ html: getMapHTML(currentLocation.lat, currentLocation.lng) }}
+        source={{ html: initialHtmlRef.current }}
         style={styles.map}
         javaScriptEnabled={true}
         domStorageEnabled={true}
@@ -468,6 +535,12 @@ export default function DriverMap() {
                 {routeDistance && <Text style={styles.routeDist}>• {routeDistance}</Text>}
                 <Text style={styles.routeType}>• {selectedHospital.type}</Text>
               </View>
+              {routePreviewing && communityCount > 0 && (
+                <Text style={styles.communityInfo}>👥 {communityCount} community members on route</Text>
+              )}
+              {routePreviewing && communityCount === 0 && (
+                <Text style={styles.communityInfo}>⚠️ No community members on this route</Text>
+              )}
             </View>
             <TouchableOpacity style={styles.cancelBtn} onPress={cancelRoute}>
               <Text style={{ color: '#ea4335', fontWeight: '700', fontSize: 13 }}>✕</Text>
@@ -503,6 +576,16 @@ export default function DriverMap() {
             <TouchableOpacity style={styles.optimizeNo} onPress={() => setShowOptimize(false)}>
               <Text style={{ color: '#9aa0a6', fontWeight: '600', fontSize: 13 }}>Keep Current</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      {/* Police Alert Banner */}
+      {policeAlert && (
+        <View style={styles.policeBanner}>
+          <Text style={styles.policeEmoji}>🚔</Text>
+          <View>
+            <Text style={styles.policeTitle}>Traffic Police Alerted</Text>
+            <Text style={styles.policeSub}>Road clearing in progress ahead</Text>
           </View>
         </View>
       )}
@@ -572,4 +655,32 @@ const styles = StyleSheet.create({
   demoPresets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
   demoBtn: { backgroundColor: 'rgba(66,133,244,0.15)', borderWidth: 1, borderColor: 'rgba(66,133,244,0.3)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   demoBtnText: { color: '#e2e2e6', fontSize: 13, fontWeight: '600' },
+  // Police Banner
+  policeBanner: {
+    position: 'absolute',
+    top: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: '#34a853',
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    zIndex: 2000,
+  },
+  policeEmoji: { fontSize: 24 },
+  policeTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  policeSub: { color: 'rgba(255,255,255,0.9)', fontSize: 13 },
+  communityInfo: {
+    color: '#8ab4f8',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 6,
+  },
 });

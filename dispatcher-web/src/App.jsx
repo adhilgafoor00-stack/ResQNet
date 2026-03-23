@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { useAuthStore } from './store/useStore';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import AdminPanel from './pages/AdminPanel';
 import './index.css';
 
 export default function App() {
   const { isAuthenticated, user } = useAuthStore();
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   // If not logged in, show login
   if (!isAuthenticated) return <Login />;
@@ -30,5 +33,25 @@ export default function App() {
     );
   }
 
-  return <Dashboard />;
+  return (
+    <div className="layout">
+      {/* Global Tab Switcher (Floating or in Header) */}
+      <div className="tab-switcher">
+        <button 
+          className={activeTab === 'dashboard' ? 'active' : ''} 
+          onClick={() => setActiveTab('dashboard')}
+        >
+          🖥️ Ops Dashboard
+        </button>
+        <button 
+          className={activeTab === 'admin' ? 'active' : ''} 
+          onClick={() => setActiveTab('admin')}
+        >
+          ⚙️ Admin Panel
+        </button>
+      </div>
+
+      {activeTab === 'dashboard' ? <Dashboard /> : <AdminPanel />}
+    </div>
+  );
 }

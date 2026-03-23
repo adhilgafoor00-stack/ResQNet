@@ -5,19 +5,43 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
 import { useAuthStore, api } from '../../store/useStore';
 import { connectSocket, listenToEvents, emitCommunityPosition } from '../../services/socket';
 
-const { width: SCREEN_W } = Dimensions.get('window');
+// Dynamically load expo-notifications ONLY outside Expo Go.
+// The static import alone triggers addPushTokenListener at module init,
+// which crashes in Expo Go SDK 53+. Dynamic require prevents that.
+let Notifications = null;
+try {
+  // Static import of constants is fine
+  const Constants = require('expo-constants').default;
+  const isExpoGo = Constants.appOwnership === 'expo';
+  
+  // We ALWAYS try to load notifications for local use
+  Notifications = require('expo-notifications');
+  
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+} catch (_) {
+  console.warn('Failed to load notifications module');
+}
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+const scheduleLocalNotification = async (title, body) => {
+  if (!Notifications) return;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body },
+      trigger: null,
+    });
+  } catch (_) {}
+};
+
+const { width: SCREEN_W } = Dimensions.get('window');
 
 function getCommunityMapHTML(lat, lng) {
   return `<!DOCTYPE html>
@@ -35,7 +59,10 @@ var map=L.map('map',{zoomControl:false}).setView([${lat},${lng}],13);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
 
 var userIcon=L.divIcon({className:'',html:'<div style="background:#fbbc04;border:2px solid #fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.4)">👤</div>',iconSize:[24,24],iconAnchor:[12,12]});
+var ambulanceIcon=L.divIcon({className:'',html:'<div style="font-size:24px;filter:drop-shadow(0 2px 6px rgba(255,0,0,0.7));">🚑</div>',iconSize:[30,30],iconAnchor:[15,15]});
 var marker=L.marker([${lat},${lng}],{icon:userIcon}).addTo(map);
+var ambulanceMarker=null;
+var routeLine=null;
 
 map.on('click', function(e){
   window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'mapClick', lat: e.latlng.lat, lng: e.latlng.lng }));
@@ -43,12 +70,24 @@ map.on('click', function(e){
   map.setView(e.latlng);
 });
 
-window.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
+function processMsg(d){
   if(d.type==='updateLocation'){ marker.setLatLng([d.lat,d.lng]); map.setView([d.lat,d.lng]); }
-}catch(err){}});
-document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
-  if(d.type==='updateLocation'){ marker.setLatLng([d.lat,d.lng]); map.setView([d.lat,d.lng]); }
-}catch(err){}});
+  if(d.type==='ambulanceMoved'){
+    if(!ambulanceMarker){ ambulanceMarker=L.marker([d.lat,d.lng],{icon:ambulanceIcon}).addTo(map); }
+    else{ ambulanceMarker.setLatLng([d.lat,d.lng]); }
+  }
+  if(d.type==='drawAmbulanceRoute' && d.coords){
+    if(routeLine){ map.removeLayer(routeLine); }
+    routeLine=L.polyline(d.coords,{color:'#ea4335',weight:4,opacity:0.9,dashArray:'8,4'}).addTo(map);
+    if(d.coords.length>0){ map.fitBounds(routeLine.getBounds(),{padding:[20,20]}); }
+  }
+  if(d.type==='ambulanceArrived'){
+    if(ambulanceMarker){ map.removeLayer(ambulanceMarker); ambulanceMarker=null; }
+    if(routeLine){ map.removeLayer(routeLine); routeLine=null; }
+  }
+}
+window.addEventListener('message',function(e){try{processMsg(JSON.parse(e.data));}catch(err){}});
+document.addEventListener('message',function(e){try{processMsg(JSON.parse(e.data));}catch(err){}});
 </script></body></html>`;
 }
 
@@ -89,8 +128,8 @@ export default function CommunityHome({ navigation }) {
 
   useEffect(() => {
     (async () => {
-      // Request notification permissions
-      await Notifications.requestPermissionsAsync();
+      // Request notification permissions (skipped in Expo Go SDK 53+)
+      if (Notifications) await Notifications.requestPermissionsAsync();
 
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
@@ -113,25 +152,45 @@ export default function CommunityHome({ navigation }) {
 
         setActiveAlert(alert);
         setCleared(false);
-
-        // Calculate distance
-        if (data.lat && data.lng && location) {
-          const d = getDistanceKm(location.lat, location.lng, data.lat, data.lng);
-          setDistance(d.toFixed(1));
-
-          // < 3km: intensive vibration (phone rings)
-          if (d < 3) {
-            Vibration.vibrate([0, 800, 200, 800, 200, 800, 200, 800, 200, 800, 200, 800]);
-          } else {
-            Vibration.vibrate([0, 400, 200, 400]);
-          }
-        } else {
-          Vibration.vibrate([0, 500, 200, 500, 200, 500]);
-        }
-
         setAlertHistory(prev => [alert, ...prev].slice(0, 15));
+
+        const alertLevel = data.alertLevel;
+
+        if (alertLevel === '10km') {
+          // 10 km away — informational, single short buzz
+          Vibration.vibrate([0, 300, 150, 300]);
+          scheduleLocalNotification(
+            '🚑 Ambulance 10 km Away',
+            'Emergency vehicle is approaching your area.'
+          );
+        } else if (alertLevel === '5km') {
+          // 5 km away — ring bells, heavy vibration pattern
+          Vibration.vibrate([0, 800, 200, 800, 200, 800, 200, 800, 200, 800, 200, 800]);
+          scheduleLocalNotification(
+            '🔔 AMBULANCE 5 km AWAY — CLEAR THE ROAD',
+            'Emergency vehicle is 5 km away. Please pull over immediately.'
+          );
+        } else if (alertLevel === 'arrived') {
+          Vibration.vibrate([0, 200, 100, 200]);
+        } else {
+          // Legacy / no alertLevel — proximity-based vibration
+          if (data.lat && data.lng && location) {
+            const d = getDistanceKm(location.lat, location.lng, data.lat, data.lng);
+            setDistance(d.toFixed(1));
+            if (d < 3) {
+              Vibration.vibrate([0, 800, 200, 800, 200, 800, 200, 800, 200, 800, 200, 800]);
+            } else {
+              Vibration.vibrate([0, 400, 200, 400]);
+            }
+          } else {
+            Vibration.vibrate([0, 500, 200, 500, 200, 500]);
+          }
+        }
       },
       onVehicleMoved: (data) => {
+        // Send ambulance position to WebView for live tracking
+        webRef.current?.postMessage(JSON.stringify({ type: 'ambulanceMoved', lat: data.lat, lng: data.lng }));
+
         // Dynamic live tracking distance
         setLocation((currentLoc) => {
           if (!currentLoc) return currentLoc;
@@ -143,7 +202,7 @@ export default function CommunityHome({ navigation }) {
           if (!activeAlert) {
             setActiveAlert({
               id: Date.now().toString(),
-              vehicleType: 'ambulance',
+              vehicleType: data.vehicleType || 'ambulance',
               receivedAt: new Date().toISOString()
             });
             setCleared(false);
@@ -151,30 +210,40 @@ export default function CommunityHome({ navigation }) {
 
           // Crossing 10km threshold -> Notification
           if (prevD > 10 && d <= 10 && d > 5) {
-            Notifications.scheduleNotificationAsync({
-              content: { title: '🚑 Ambulance 10km Away', body: 'Emergency vehicle is approaching your sector.' },
-              trigger: null,
-            });
+            scheduleLocalNotification('🚑 Ambulance 10km Away', 'Emergency vehicle is approaching your sector.');
           }
-          // Crossing 5km threshold -> Notification for non-active users simulation
+          // Crossing 5km threshold -> Notification
           if (prevD > 5 && d <= 5 && d > 3) {
-            Notifications.scheduleNotificationAsync({
-              content: { title: '🚨 Ambulance 5km Away', body: 'Please remain vigilant, emergency vehicle is entering your area.' },
-              trigger: null,
-            });
+            scheduleLocalNotification('🚨 Ambulance 5km Away', 'Please remain vigilant, emergency vehicle is entering your area.');
           }
           // Crossing 3km threshold -> Heavy ringing/vibration
           if (prevD > 3 && d <= 3) {
             Vibration.vibrate([0, 800, 200, 800, 200, 800, 200, 800, 200, 800, 200, 800]);
-            Notifications.scheduleNotificationAsync({
-              content: { title: '⚠️ EVASIVE ACTION REQUIRED', body: 'Ambulance < 3km! Please clear the road immediately.' },
-              trigger: null,
-            });
+            scheduleLocalNotification('⚠️ EVASIVE ACTION REQUIRED', 'Ambulance < 3km! Please clear the road immediately.');
           }
 
           lastAlertDist.current = d;
           return currentLoc;
         });
+      },
+      onVehicleArrived: (data) => {
+        // Clear ambulance from community map
+        webRef.current?.postMessage(JSON.stringify({ type: 'ambulanceArrived' }));
+        setActiveAlert(null);
+        setCleared(false);
+        setDistance(null);
+      },
+      onVehicleActive: (data) => {
+        // Vehicle just dispatched (or user opened app mid-journey) — show alert card
+        const v = data.vehicle || data;
+        setActiveAlert(prev => prev || {
+          id: Date.now().toString(),
+          vehicleType: v.vehicleType || 'ambulance',
+          receivedAt: new Date().toISOString(),
+          alertLevel: 'dispatched',
+        });
+        setCleared(false);
+        Vibration.vibrate([0, 300, 150, 300]);
       },
       onVoiceBroadcast: (data) => {
         navigation.navigate('VoicePlayer', { audioUrl: data.audioUrl, fromName: data.fromName });
@@ -284,9 +353,13 @@ export default function CommunityHome({ navigation }) {
               <Text style={styles.clearBtnText}>I HAVE CLEARED THE PATH</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.viewRouteBtn} onPress={() => {}}>
+            <TouchableOpacity style={styles.viewRouteBtn} onPress={() => {
+              if (activeAlert) {
+                webRef.current?.postMessage(JSON.stringify({ type: 'drawAmbulanceRoute', coords: [] }));
+              }
+            }}>
               <Text style={{ fontSize: 16 }}>🗺️</Text>
-              <Text style={styles.viewRouteBtnText}>View Ambulance Route</Text>
+              <Text style={styles.viewRouteBtnText}>Emergency Vehicle Route</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>

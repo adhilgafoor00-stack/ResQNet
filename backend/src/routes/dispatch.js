@@ -3,6 +3,7 @@ const Vehicle = require('../models/Vehicle');
 const SOS = require('../models/SOS');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
+const { startVehicleSimulation } = require('../socket/simulation');
 const router = express.Router();
 
 /**
@@ -52,32 +53,31 @@ router.post('/', auth, async (req, res) => {
 
     const io = req.app.get('io');
     if (io) {
-      // Notify all clients of vehicle dispatch
-      io.emit('vehicle:active', { vehicle }); // vehicle:active — vehicle dispatched with destination
+      // Notify all clients of vehicle active / dispatch
+      io.emit('vehicle:active', { vehicle });
 
-      // Alert community members within 500m of destination
-      const communityMembers = await User.find({
-        role: 'community',
-        isActive: true,
-        'location.lat': { $ne: null },
-        'location.lng': { $ne: null }
-      });
+      // ── Live movement simulation ──────────────────────────────────────────
+      // Pick start position: use vehicle's current GPS if available,
+      // otherwise default to 15 km north of the destination so the demo
+      // passes through both the 10 km and 5 km notification thresholds.
+      const KM_PER_DEG_LAT = 111.32; // approx
+      const startLat = vehicle.location?.lat  ?? (destination.lat + 15 / KM_PER_DEG_LAT);
+      const startLng = vehicle.location?.lng  ?? destination.lng;
 
-      // Calculate distance and alert members within 500m
-      communityMembers.forEach(member => {
-        const distance = getDistanceMetres(
-          member.location.lat, member.location.lng,
-          destination.lat, destination.lng
-        );
-        if (distance <= 500) {
-          io.emit('alert:community', { // alert:community — 500m alert
-            vehicleType: vehicle.vehicleType,
-            eta: null, // Will be calculated by client
-            lat: destination.lat,
-            lng: destination.lng
-          });
-        }
-      });
+      // Save that starting position immediately so the map marker appears
+      vehicle.location = { lat: startLat, lng: startLng };
+      await vehicle.save();
+      io.emit('vehicle:moved', { vehicleId: vehicle._id, lat: startLat, lng: startLng, vehicleType: vehicle.vehicleType });
+
+      startVehicleSimulation(
+        io,
+        vehicle._id,
+        startLat,
+        startLng,
+        destination.lat,
+        destination.lng,
+        vehicle.vehicleType
+      );
     }
 
     res.json({ success: true, vehicle });
