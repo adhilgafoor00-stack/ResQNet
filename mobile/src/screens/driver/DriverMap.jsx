@@ -142,6 +142,7 @@ export default function DriverMap() {
   const [eta, setEta] = useState(null);
   const [routeDistance, setRouteDistance] = useState(null);
   const [showHospList, setShowHospList] = useState(false);
+  const [showDemoSetter, setShowDemoSetter] = useState(false);
   const [isFetchingHospitals, setIsFetchingHospitals] = useState(false);
   const webRef = useRef(null);
   const locationWatcher = useRef(null);
@@ -181,6 +182,15 @@ export default function DriverMap() {
       setIsFetchingHospitals(false);
     }
   };
+
+  const setDemoPosition = (lat, lng) => {
+    setCurrentLocation({ lat, lng });
+    sendToMap({ type: 'updateDriver', lat, lng });
+    sendToMap({ type: 'focusDriver' });
+    fetchNearbyHospitals(lat, lng);
+    setShowDemoSetter(false);
+  };
+
 
   // Pulse animation
   useEffect(() => {
@@ -358,13 +368,36 @@ export default function DriverMap() {
           <Animated.View style={[styles.liveDot, { opacity: pulseAnim }]} />
           <Text style={styles.chipText}>🚑 {user?.vehicleType?.toUpperCase() || 'AMBULANCE'}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.listToggle}
-          onPress={() => setShowHospList(!showHospList)}
-        >
-          <Text style={styles.listToggleText}>{showHospList ? '✕' : '☰'} Hospitals</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity style={styles.listToggle} onPress={() => setShowDemoSetter(!showDemoSetter)}>
+            <Text style={{ fontSize: 13 }}>📍 Test</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.listToggle} onPress={() => setShowHospList(!showHospList)}>
+            <Text style={styles.listToggleText}>{showHospList ? '✕' : '☰'} Hosps</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Demo Position Setter (Floating) */}
+      {showDemoSetter && (
+        <View style={styles.demoCard}>
+          <Text style={styles.demoTitle}>TEST POSITIONS (Teleport)</Text>
+          <View style={styles.demoPresets}>
+            <TouchableOpacity style={styles.demoBtn} onPress={() => setDemoPosition(11.2588, 75.7804)}>
+              <Text style={styles.demoBtnText}>📍 Kozhikode</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.demoBtn} onPress={() => setDemoPosition(10.0159, 76.3118)}>
+              <Text style={styles.demoBtnText}>📍 Kochi</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.demoBtn} onPress={() => setDemoPosition(8.5241, 76.9366)}>
+              <Text style={styles.demoBtnText}>📍 Trivandrum</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.demoBtn} onPress={() => setDemoPosition(11.8745, 75.3704)}>
+              <Text style={styles.demoBtnText}>📍 Kannur</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* My Location button */}
       <TouchableOpacity style={styles.myLocBtn} onPress={() => sendToMap({ type: 'focusDriver' })}>
@@ -495,4 +528,10 @@ const styles = StyleSheet.create({
   optimizeActions: { flexDirection: 'row', gap: 10 },
   optimizeYes: { flex: 1, backgroundColor: '#34a853', borderRadius: 50, padding: 12, alignItems: 'center', minHeight: 44, justifyContent: 'center' },
   optimizeNo: { flex: 1, backgroundColor: 'rgba(68,71,78,0.3)', borderRadius: 50, padding: 12, alignItems: 'center', minHeight: 44, justifyContent: 'center' },
+  // Demo Card
+  demoCard: { position: 'absolute', top: 70, left: 12, right: 12, backgroundColor: '#212429', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#4285f4', zIndex: 100 },
+  demoTitle: { color: '#8ab4f8', fontSize: 13, fontWeight: '800', marginBottom: 12, textAlign: 'center' },
+  demoPresets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  demoBtn: { backgroundColor: 'rgba(66,133,244,0.15)', borderWidth: 1, borderColor: 'rgba(66,133,244,0.3)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
+  demoBtnText: { color: '#e2e2e6', fontSize: 13, fontWeight: '600' },
 });
