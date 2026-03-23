@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView,
-  Animated, Dimensions, TextInput, Vibration
+  Animated, Dimensions, TextInput, Vibration, Linking
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -99,11 +99,17 @@ function addBlock(id,lat,lng,radius){
 }
 function removeBlock(id){if(blockLayers[id]){map.removeLayer(blockLayers[id]);delete blockLayers[id]}}
 
-function addCommunity(id,lat,lng,name,status){
+function callCommunity(el){
+  var p=el.getAttribute('data-phone'); var n=el.getAttribute('data-name');
+  if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'communityCall',phone:p,name:n}));
+}
+function addCommunity(id,lat,lng,name,status,phone){
   if(communityMarkers[id])map.removeLayer(communityMarkers[id]);
-  var color=status==='cleared'?'#34a853':'#fbbc04';
-  var icon=L.divIcon({className:'',html:'<div style="background:'+color+';border:2px solid #fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,0.3)">👤</div>',iconSize:[24,24],iconAnchor:[12,12]});
-  communityMarkers[id]=L.marker([lat,lng],{icon:icon}).addTo(map).bindPopup(name+' ('+status+')');
+  var color=status==='active'?'#34a853':'#fbbc04';
+  var icon=L.divIcon({className:'',html:'<div style="background:'+color+';border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,0.3)">👤</div>',iconSize:[26,26],iconAnchor:[13,13]});
+  var callBtn=phone ? '<button onclick="callCommunity(this)" data-phone="'+phone+'" data-name="'+name+'" style="margin-top:8px;background:#4285f4;color:#fff;border:none;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer">📞 Call</button>' : '';
+  var popup='<div style="text-align:center;min-width:120px;font-family:sans-serif"><b>'+name+'</b><br><span style="color:'+color+';font-size:11px">● '+(status==='active'?'Active':'Standby')+'</span><br>'+callBtn+'</div>';
+  communityMarkers[id]=L.marker([lat,lng],{icon:icon}).addTo(map).bindPopup(popup,{maxWidth:180});
 }
 
 function focusDriver(){map.setView(driverMarker.getLatLng(),15)}
@@ -114,7 +120,7 @@ window.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
   if(d.type==='clearRoute')clearRoute();
   if(d.type==='addBlock')addBlock(d.id,d.lat,d.lng,d.radius);
   if(d.type==='removeBlock')removeBlock(d.id);
-  if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status);
+  if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status,d.phone);
   if(d.type==='focusDriver')focusDriver();
   if(d.type==='updateHospitals')renderHospitals(d.hospitals);
 }catch(err){}});
@@ -124,7 +130,7 @@ document.addEventListener('message',function(e){try{var d=JSON.parse(e.data);
   if(d.type==='clearRoute')clearRoute();
   if(d.type==='addBlock')addBlock(d.id,d.lat,d.lng,d.radius);
   if(d.type==='removeBlock')removeBlock(d.id);
-  if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status);
+  if(d.type==='addCommunity')addCommunity(d.id,d.lat,d.lng,d.name,d.status,d.phone);
   if(d.type==='focusDriver')focusDriver();
   if(d.type==='updateHospitals')renderHospitals(d.hospitals);
 }catch(err){}});
@@ -292,7 +298,7 @@ export default function DriverMap() {
           // Push community members to map as pins
           membersDetail.forEach(m => {
             if (m.location?.lat) {
-              sendToMap({ type: 'addCommunity', id: m._id, lat: m.location.lat, lng: m.location.lng, name: m.name || 'Member', status: m.isActive ? 'active' : 'standby' });
+              sendToMap({ type: 'addCommunity', id: m._id, lat: m.location.lat, lng: m.location.lng, name: m.name || 'Member', status: m.isActive ? 'active' : 'standby', phone: m.phone || '' });
             }
           });
         } catch {}
@@ -425,6 +431,18 @@ export default function DriverMap() {
       if (data.type === 'hospitalSelected') {
         const h = hospitals.find(h => h.id === data.id);
         if (h) selectHospital(h);
+      }
+      if (data.type === 'communityCall') {
+        const phone = data.phone;
+        const name = data.name || 'Community Member';
+        Alert.alert(
+          `📞 Call ${name}`,
+          `${phone}`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: '📞 Call Now', onPress: () => Linking.openURL(`tel:${phone}`) }
+          ]
+        );
       }
     } catch {}
   };
