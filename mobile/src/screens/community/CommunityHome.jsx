@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Vibration, Animated, Dimensions
+  Vibration, Animated, Dimensions, TextInput, Alert
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useAuthStore, api } from '../../store/useStore';
@@ -12,6 +12,8 @@ const { width: SCREEN_W } = Dimensions.get('window');
 export default function CommunityHome({ navigation }) {
   const { user } = useAuthStore();
   const [location, setLocation] = useState(null);
+  const [demoLat, setDemoLat] = useState('');
+  const [demoLng, setDemoLng] = useState('');
   const [activeAlert, setActiveAlert] = useState(null);
   const [alertHistory, setAlertHistory] = useState([]);
   const [distance, setDistance] = useState(null);
@@ -90,6 +92,31 @@ export default function CommunityHome({ navigation }) {
   const handleCleared = () => {
     setCleared(true);
     Vibration.cancel();
+  };
+
+  // DEMO: Set manual position
+  const DEMO_PRESETS = [
+    { label: '📍 Near Baby Memorial', lat: 11.2620, lng: 75.7825 },
+    { label: '📍 Near MIMS Hospital', lat: 11.2730, lng: 75.7790 },
+    { label: '📍 Mavoor Road', lat: 11.2590, lng: 75.7810 },
+    { label: '📍 Mananchira', lat: 11.2555, lng: 75.7785 },
+    { label: '📍 Near Medical College', lat: 11.2575, lng: 75.7710 },
+  ];
+
+  const setDemoPosition = (lat, lng) => {
+    const newLoc = { lat, lng };
+    setLocation(newLoc);
+    setDemoLat(lat.toString());
+    setDemoLng(lng.toString());
+    emitCommunityPosition(lat, lng);
+    Alert.alert('📍 Position Set', `Location: ${lat.toFixed(5)}, ${lng.toFixed(5)}\n\nYou will now receive alerts when an ambulance approaches this position.`);
+  };
+
+  const applyManualPosition = () => {
+    const lat = parseFloat(demoLat);
+    const lng = parseFloat(demoLng);
+    if (isNaN(lat) || isNaN(lng)) return Alert.alert('Invalid', 'Enter valid lat/lng numbers');
+    setDemoPosition(lat, lng);
   };
 
   const vehicleEmoji = { ambulance: '🚑', fire: '🚒', rescue: '⛵', police: '🚓' };
@@ -186,6 +213,44 @@ export default function CommunityHome({ navigation }) {
           <Text style={styles.locationCoords}>{location.lat.toFixed(5)}, {location.lng.toFixed(5)}</Text>
         </View>
       )}
+
+      {/* DEMO: Manual Position Setter */}
+      <View style={styles.demoCard}>
+        <Text style={styles.demoTitle}>🧪 DEMO MODE — SET POSITION</Text>
+        <Text style={styles.demoSub}>Tap a preset to simulate being near an ambulance route:</Text>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 10 }}>
+          {DEMO_PRESETS.map((p, i) => (
+            <TouchableOpacity key={i} style={styles.presetBtn} onPress={() => setDemoPosition(p.lat, p.lng)} activeOpacity={0.7}>
+              <Text style={styles.presetText}>{p.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <Text style={styles.demoOrText}>— or enter manually —</Text>
+
+        <View style={styles.manualRow}>
+          <TextInput
+            style={styles.manualInput}
+            placeholder="Latitude"
+            placeholderTextColor="#4a5568"
+            keyboardType="numeric"
+            value={demoLat}
+            onChangeText={setDemoLat}
+          />
+          <TextInput
+            style={styles.manualInput}
+            placeholder="Longitude"
+            placeholderTextColor="#4a5568"
+            keyboardType="numeric"
+            value={demoLng}
+            onChangeText={setDemoLng}
+          />
+          <TouchableOpacity style={styles.manualApplyBtn} onPress={applyManualPosition}>
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Set</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Safety Protocols */}
       <View style={styles.protocolCard}>
@@ -316,4 +381,14 @@ const styles = StyleSheet.create({
   historyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   historyText: { color: '#e2e2e6', fontSize: 13, fontWeight: '600', flex: 1 },
   historyTime: { color: '#8e9199', fontSize: 11 },
+  // Demo position
+  demoCard: { backgroundColor: '#1a1c1e', borderRadius: 16, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(251,191,36,0.2)', borderLeftWidth: 4, borderLeftColor: '#fbbf24' },
+  demoTitle: { color: '#fbbf24', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: 6 },
+  demoSub: { color: '#9aa0a6', fontSize: 12, marginBottom: 4 },
+  presetBtn: { backgroundColor: 'rgba(251,191,36,0.08)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 50, marginRight: 8, borderWidth: 1, borderColor: 'rgba(251,191,36,0.15)' },
+  presetText: { color: '#fbbf24', fontSize: 12, fontWeight: '700' },
+  demoOrText: { color: '#44474e', fontSize: 11, textAlign: 'center', marginVertical: 8 },
+  manualRow: { flexDirection: 'row', gap: 8 },
+  manualInput: { flex: 1, backgroundColor: '#212429', borderRadius: 10, padding: 12, color: '#e2e2e6', fontSize: 13, borderWidth: 1, borderColor: 'rgba(68,71,78,0.3)' },
+  manualApplyBtn: { backgroundColor: '#fbbf24', borderRadius: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
 });
