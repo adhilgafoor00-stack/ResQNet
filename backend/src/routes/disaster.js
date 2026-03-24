@@ -119,7 +119,44 @@ router.post('/', auth, async (req, res) => {
       statusLog: [{ status: 'received', note: 'Disaster SOS created' }],
       createdBy: req.user.userId,
     });
-    if (_io) _io.emit('disaster:created', { event });
+    if (_io) {
+      _io.emit('disaster:created', { event });
+      
+      // ── AUTO-NOTIFY community within 30km ──────────────────────────────────
+      try {
+        const communityUsers = await User.find({ role: 'community', isActive: true });
+        const nearby = communityUsers.filter(u =>
+          u.location?.lat && getDistanceKm(event.location.lat, event.location.lng, u.location.lat, u.location.lng) <= 30
+        );
+        console.log(`[Disaster] Notifying ${nearby.length} community members within 30km`);
+        nearby.forEach(u => {
+          const dist = getDistanceKm(event.location.lat, event.location.lng, u.location.lat, u.location.lng);
+          _io.to(u._id.toString()).emit('disaster:community_alert', {
+            eventId: event._id,
+            teamName: event.teamName,
+            type: event.type,
+            origin: event.location,
+            destination: event.destination,
+            nearestHospital: event.nearestHospital,
+            safetyCamp: event.safetyCamp,
+            distanceKm: Math.round(dist * 10) / 10,
+          });
+        });
+
+        // Also broadcast general alert for non-room-joined clients
+        _io.emit('disaster:community_alert_broadcast', {
+          eventId: event._id,
+          teamName: event.teamName,
+          type: event.type,
+          origin: event.location,
+          nearestHospital: event.nearestHospital,
+          safetyCamp: event.safetyCamp,
+        });
+      } catch (err) {
+        console.warn('[Disaster] Community notify error:', err.message);
+      }
+    }
+    
     res.status(201).json({ success: true, event });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -136,6 +173,38 @@ router.get('/active', auth, async (req, res) => {
       .populate('resourceVolunteers', 'name phone location isActive')
       .sort({ createdAt: -1 });
     res.json({ success: true, events });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/disaster/:id/attend — A community member volunteers to attend
+ */
+router.patch('/:id/attend', auth, async (req, res) => {
+  try {
+    const event = await DisasterEvent.findById(req.params.id);
+    if (!event) return res.status(404).json({ success: false, error: 'Event not found' });
+    if (event.status === 'arrived') return res.status(400).json({ success: false, error: 'Event already resolved' });
+
+    // Ensure user isn't already in list
+    const userId = req.user.userId;
+    if (!event.resourceVolunteers.includes(userId)) {
+      event.resourceVolunteers.push(userId);
+      event.statusLog.push({ status: event.status, note: 'A community volunteer joined the rescue team' });
+      await event.save();
+    }
+
+    const userDoc = await User.findById(userId).select('name phone location');
+
+    if (_io) {
+      _io.emit('disaster:volunteer_attended', {
+        eventId: event._id,
+        user: userDoc
+      });
+    }
+
+    res.json({ success: true, event });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -166,7 +235,11 @@ router.patch('/:id/assign', auth, async (req, res) => {
     if (!event) return res.status(404).json({ success: false, error: 'Event not found' });
 
     event.resourceVehicles = vehicleIds;
-    event.resourceVolunteers = volunteerIds;
+    if (volunteerIds && volunteerIds.length > 0) {
+      // Only merge if explicitly passed
+      const combined = new Set([...event.resourceVolunteers.map(v => v.toString()), ...volunteerIds]);
+      event.resourceVolunteers = Array.from(combined);
+    }
     if (destination?.lat) event.destination = destination;
     event.status = 'assigned';
     event.statusLog.push({ status: 'assigned', note: `${vehicleIds.length} rescue vehicles, ${volunteerIds.length} team members assigned` });
@@ -230,40 +303,6 @@ router.patch('/:id/enroute', auth, async (req, res) => {
         nearestHospital: event.nearestHospital,
         safetyCamp: event.safetyCamp,
       });
-
-      // ── AUTO-NOTIFY community within 30km ──────────────────────────────────
-      try {
-        const communityUsers = await User.find({ role: 'community', isActive: true });
-        const nearby = communityUsers.filter(u =>
-          u.location?.lat && getDistanceKm(event.location.lat, event.location.lng, u.location.lat, u.location.lng) <= 30
-        );
-        console.log(`[Disaster] Notifying ${nearby.length} community members within 30km`);
-        nearby.forEach(u => {
-          const dist = getDistanceKm(event.location.lat, event.location.lng, u.location.lat, u.location.lng);
-          _io.to(u._id.toString()).emit('disaster:community_alert', {
-            eventId: event._id,
-            teamName: event.teamName,
-            type: event.type,
-            origin: event.location,
-            destination: event.destination,
-            nearestHospital: event.nearestHospital,
-            safetyCamp: event.safetyCamp,
-            distanceKm: Math.round(dist * 10) / 10,
-          });
-        });
-
-        // Also broadcast general alert for non-room-joined clients
-        _io.emit('disaster:community_alert_broadcast', {
-          eventId: event._id,
-          teamName: event.teamName,
-          type: event.type,
-          origin: event.location,
-          nearestHospital: event.nearestHospital,
-          safetyCamp: event.safetyCamp,
-        });
-      } catch (err) {
-        console.warn('[Disaster] Community notify error:', err.message);
-      }
     }
 
     res.json({ success: true, event });

@@ -90,6 +90,21 @@ export default function DisasterPanel() {
       setEvents(prev => prev.map(e => e._id === eventId ? { ...e, status: 'arrived' } : e));
       if (activeEvent?._id === eventId) setActiveEvent(ev => ({ ...ev, status: 'arrived' }));
     });
+    s.on('disaster:volunteer_attended', ({ eventId, user }) => {
+      setEvents(prev => prev.map(e => {
+        if (e._id === eventId) {
+          const exists = e.resourceVolunteers?.find(v => v._id === user._id);
+          return { ...e, resourceVolunteers: exists ? e.resourceVolunteers : [...(e.resourceVolunteers || []), user] };
+        }
+        return e;
+      }));
+      if (activeEvent?._id === eventId) {
+        setActiveEvent(ev => {
+          const exists = ev.resourceVolunteers?.find(v => v._id === user._id);
+          return { ...ev, resourceVolunteers: exists ? ev.resourceVolunteers : [...(ev.resourceVolunteers || []), user] };
+        });
+      }
+    });
     s.on('vehicle:moved', ({ vehicleId, lat, lng, vehicleType }) => {
       mapRef.current?.contentWindow?.postMessage(
         JSON.stringify({ type: 'vehicleMoved', id: vehicleId, lat, lng, vtype: vehicleType }), '*'
@@ -97,7 +112,7 @@ export default function DisasterPanel() {
     });
     return () => {
       s.off('disaster:created'); s.off('disaster:team_assigned');
-      s.off('disaster:enroute'); s.off('disaster:arrived'); s.off('vehicle:moved');
+      s.off('disaster:enroute'); s.off('disaster:arrived'); s.off('disaster:volunteer_attended'); s.off('vehicle:moved');
     };
   }, [activeEvent]);
 
@@ -292,7 +307,7 @@ export default function DisasterPanel() {
                 )}
                 {recommendations.safetyCamps.length > 0 && (
                   <>
-                    <h4 className="rec-title">⛺ Nearest Safety Camps — click to select</h4>
+                    <h4 className="rec-title">⛺ Nearest Camps, Medical Camps & Rescue Homes</h4>
                     <div className="rec-grid">
                       {recommendations.safetyCamps.map(c => (
                         <button key={c.id} className={`rec-card ${selectedCamp?.id === c.id ? 'rec-active' : ''}`}
@@ -330,16 +345,16 @@ export default function DisasterPanel() {
                 ))}
               </div>
               <div className="resource-col">
-                <h4>⛑️ Rescue Team Members ({selectedMembers.length} selected)</h4>
-                {rescueTeam.length === 0 && <p className="no-res">No active team members</p>}
-                {rescueTeam.map(m => (
-                  <div key={m._id} className={`resource-item ${selectedMembers.includes(m._id) ? 'selected' : ''}`} onClick={() => toggleMember(m._id)}>
-                    <span className="res-icon">⛑️</span>
+                <h4>⛑️ Attended Volunteers ({activeEvent?.resourceVolunteers?.length || 0} responded)</h4>
+                {(!activeEvent?.resourceVolunteers || activeEvent.resourceVolunteers.length === 0) && <p className="no-res">Waiting for community volunteers to attend...</p>}
+                {(activeEvent?.resourceVolunteers || []).map(m => (
+                  <div key={m._id} className="resource-item selected">
+                    <span className="res-icon">✋</span>
                     <div>
                       <p className="res-name">{m.name}</p>
                       <p className="res-meta">{m.phone}</p>
                     </div>
-                    {selectedMembers.includes(m._id) && <span className="check">✓</span>}
+                    <span className="check" style={{color:'#34a853'}}>✓</span>
                   </div>
                 ))}
               </div>

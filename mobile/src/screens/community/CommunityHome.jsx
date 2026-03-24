@@ -257,6 +257,18 @@ export default function CommunityHome({ navigation }) {
 
   const handleCleared = () => { Vibration.cancel(); setCleared(true); };
 
+  const handleAttendDisaster = async () => {
+    if (!activeAlert?.eventId) return;
+    try {
+      await api.patch(`/api/disaster/${activeAlert.eventId}/attend`);
+      Vibration.cancel();
+      setCleared(true);
+      notify('✅ Volunteer Confirmed', `You are now attached to ${activeAlert.teamName}. Proceed safely.`);
+    } catch (e) {
+      console.warn('Attend error:', e.message);
+    }
+  };
+
   const vEmoji = { ambulance: '🚑', fire: '🚒', rescue: '⛵', police: '🚓', disaster: activeAlert?.icon || '🚨' };
 
   const statusColor = isActive ? '#00c9a7' : '#44495a';
@@ -320,9 +332,20 @@ export default function CommunityHome({ navigation }) {
             </View>
 
             <View style={s.alertActions}>
-              <TouchableOpacity style={s.clearBtn} onPress={handleCleared} activeOpacity={0.8}>
-                <Text style={s.clearBtnText}>✅  I HAVE CLEARED THE PATH</Text>
-              </TouchableOpacity>
+              {activeAlert.vehicleType === 'disaster' ? (
+                <>
+                  <TouchableOpacity style={[s.clearBtn, { backgroundColor: '#fbbc04' }]} onPress={handleAttendDisaster} activeOpacity={0.8}>
+                    <Text style={[s.clearBtnText, { color: '#0F1923' }]}>✋ I CAN ATTEND (VOLUNTEER)</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.clearBtn, { backgroundColor: '#161922', marginTop: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }]} onPress={handleCleared} activeOpacity={0.8}>
+                    <Text style={[s.clearBtnText, { color: '#8a91a0', fontSize: 13 }]}>❌ Cannot Attend</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity style={s.clearBtn} onPress={handleCleared} activeOpacity={0.8}>
+                  <Text style={s.clearBtnText}>✅  I HAVE CLEARED THE PATH</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={s.routeBtn} onPress={() => webRef.current?.postMessage(JSON.stringify({ type: 'drawRoute', coords: [] }))} activeOpacity={0.8}>
                 <Text style={s.routeBtnText}>🗺️  Emergency Vehicle Route</Text>
               </TouchableOpacity>
@@ -331,8 +354,8 @@ export default function CommunityHome({ navigation }) {
         ) : cleared ? (
           <View style={s.clearedCard}>
             <Text style={s.clearedEmoji}>✅</Text>
-            <Text style={s.clearedTitle}>Path Cleared</Text>
-            <Text style={s.clearedSub}>Thank you for keeping emergency lanes clear.</Text>
+            <Text style={s.clearedTitle}>{activeAlert?.vehicleType === 'disaster' ? 'Response Logged' : 'Path Cleared'}</Text>
+            <Text style={s.clearedSub}>{activeAlert?.vehicleType === 'disaster' ? 'Thank you for volunteering.' : 'Thank you for keeping emergency lanes clear.'}</Text>
           </View>
         ) : (
           <View style={s.standbyCard}>
