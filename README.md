@@ -1,4 +1,4 @@
-
+<div align="center">
 
 # 🚑 ResQNet
 
@@ -18,36 +18,14 @@
 
 ## 📖 Table of Contents
 - [About the Project](#-about-the-project)
-- [Architecture](#-architecture)
+- [Architecture & Technical Workflow](#-architecture--technical-workflow)
 - [Features](#-features)
 - [Tech Stack](#-tech-stack)
 - [Getting Started](#-getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation & Setup](#installation--setup)
 - [Demo Credentials](#-demo-credentials)
-- [Environment Variables](#-environment-variables)# ResQNet — Unified Emergency Coordination Platform
-
-> Built for Kerala, India. Built for when everything else fails.
-
-## Architecture
-```
-resqnet/
-├── backend/          Node.js + Express + MongoDB + Socket.io
-├── dispatcher-web/   React + Vite + Leaflet.js (laptop web app)
-└── mobile/           React Native + Expo (Android — all 4 roles)
-```
-
-## Demo Credentials (OTP for all: `1234`)
-
-| Role | Phone | Name |
-|------|-------|------|
-| Dispatcher | +919000000001 | Control Room — Kozhikode |
-| Driver (Ambulance) | +919000000002 | Arun Kumar |
-| Driver (Fire) | +919000000003 | Suresh Nair |
-| Driver (Rescue) | +919000000004 | Biju Thomas |
-| Driver (Police) | +919000000005 | Rajan Pillai |
-| Community | +919000000006 | Arjun — Mavoor Road |
-
+- [Environment Variables](#-environment-variables)
 - [Contributing](#-contributing)
 - [License](#-license)
 

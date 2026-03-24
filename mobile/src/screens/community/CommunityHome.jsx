@@ -11,20 +11,22 @@ import { connectSocket, listenToEvents, emitCommunityPosition } from '../../serv
 
 // ── Notifications ────────────────────────────────────────────────────────────
 let Notifications = null;
+let notificationsReady = false;
 try {
   Notifications = require('expo-notifications');
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-} catch (_) {}
+  if (Notifications?.setNotificationHandler) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false,
+      }),
+    });
+    notificationsReady = true;
+  }
+} catch (_) { Notifications = null; }
 
 const notify = async (title, body) => {
-  if (!Notifications) return;
-  try { await Notifications.scheduleNotificationAsync({ content: { title, body }, trigger: null }); } catch (_) {}
+  if (!notificationsReady || !Notifications?.scheduleNotificationAsync) return;
+  try { await Notifications.scheduleNotificationAsync({ content: { title, body, sound: true }, trigger: null }); } catch (_) {}
 };
 
 // ── Haversine ─────────────────────────────────────────────────────────────────
@@ -170,7 +172,7 @@ export default function CommunityHome({ navigation }) {
   // Socket setup
   useEffect(() => {
     (async () => {
-      if (Notifications) await Notifications.requestPermissionsAsync().catch(() => {});
+      if (notificationsReady && Notifications?.requestPermissionsAsync) await Notifications.requestPermissionsAsync().catch(() => {});
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         const loc = await Location.getCurrentPositionAsync({});
@@ -203,10 +205,7 @@ export default function CommunityHome({ navigation }) {
           const d = getDistanceKm(cur.lat, cur.lng, data.lat, data.lng);
           setDistance(d.toFixed(1));
           checkThresholds(d);
-          if (!activeAlert) {
-            setActiveAlert({ id: Date.now().toString(), vehicleType: data.vehicleType || 'ambulance', receivedAt: new Date().toISOString() });
-            setCleared(false);
-          }
+          // FIX: Do NOT create phantom alert here — only update distance
           return cur;
         });
       },
@@ -227,17 +226,48 @@ export default function CommunityHome({ navigation }) {
         webRef.current?.postMessage(JSON.stringify({ type: 'clearMap' }));
         setActiveAlert(null); setCleared(false); setDistance(null);
       },
-      onVehicleActive: (data) => {
-        const v = data.vehicle || data;
-        setActiveAlert(prev => prev || { id: Date.now().toString(), vehicleType: v.vehicleType || 'ambulance', receivedAt: new Date().toISOString() });
+      onDisasterCommunityAlert: (data) => {
+        const icons = { flood: '🌊', fire: '🔥', medical: '🏥', rescue: '🚁' };
+        const icon = icons[data.type] || '🚨';
+        const hospName = data.nearestHospital?.name || '';
+        const campName = data.safetyCamp?.name || '';
+        const distStr = data.distanceKm ? `${data.distanceKm} km away` : '';
+        const alert = {
+          id: Date.now().toString(), vehicleType: 'disaster',
+          teamName: data.teamName, icon, receivedAt: new Date().toISOString(),
+          alertLevel: 'disaster', hospitalName: hospName, campName: campName,
+        };
+        setActiveAlert(alert);
         setCleared(false);
-        Vibration.vibrate([0, 300, 150, 300]);
+        setAlertHistory(prev => [alert, ...prev].slice(0, 15));
+        Vibration.vibrate([0, 700, 200, 700, 200, 700, 200, 700, 200, 700]);
+        const body = [
+          `${data.teamName || 'Rescue Team'} responding ${distStr}`,
+          hospName ? `🏥 ${hospName}` : '',
+          campName ? `⛺ Safety camp: ${campName}` : '',
+        ].filter(Boolean).join('\n');
+        notify(`${icon} DISASTER ALERT — CLEAR THE ROAD`, body);
+      },
+      onVehicleActive: () => {
+        // FIX: Do NOT create phantom alert — real alerts come via alert:community only
       },
       onVoiceBroadcast: (data) => navigation.navigate('VoicePlayer', { audioUrl: data.audioUrl, fromName: data.fromName }),
     });
   }, []);
 
   const handleCleared = () => { Vibration.cancel(); setCleared(true); };
+
+  const handleAttendDisaster = async () => {
+    if (!activeAlert?.eventId) return;
+    try {
+      await api.patch(`/api/disaster/${activeAlert.eventId}/attend`);
+      Vibration.cancel();
+      setCleared(true);
+      notify('✅ Volunteer Confirmed', `You are now attached to ${activeAlert.teamName}. Proceed safely.`);
+    } catch (e) {
+      console.warn('Attend error:', e.message);
+    }
+  };
 
   const vEmoji = { ambulance: '🚑', fire: '🚒', rescue: '⛵', police: '🚓', disaster: activeAlert?.icon || '🚨' };
 
@@ -302,9 +332,20 @@ export default function CommunityHome({ navigation }) {
             </View>
 
             <View style={s.alertActions}>
-              <TouchableOpacity style={s.clearBtn} onPress={handleCleared} activeOpacity={0.8}>
-                <Text style={s.clearBtnText}>✅  I HAVE CLEARED THE PATH</Text>
-              </TouchableOpacity>
+              {activeAlert.vehicleType === 'disaster' ? (
+                <>
+                  <TouchableOpacity style={[s.clearBtn, { backgroundColor: '#fbbc04' }]} onPress={handleAttendDisaster} activeOpacity={0.8}>
+                    <Text style={[s.clearBtnText, { color: '#0F1923' }]}>✋ I CAN ATTEND (VOLUNTEER)</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.clearBtn, { backgroundColor: '#161922', marginTop: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }]} onPress={handleCleared} activeOpacity={0.8}>
+                    <Text style={[s.clearBtnText, { color: '#8a91a0', fontSize: 13 }]}>❌ Cannot Attend</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity style={s.clearBtn} onPress={handleCleared} activeOpacity={0.8}>
+                  <Text style={s.clearBtnText}>✅  I HAVE CLEARED THE PATH</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={s.routeBtn} onPress={() => webRef.current?.postMessage(JSON.stringify({ type: 'drawRoute', coords: [] }))} activeOpacity={0.8}>
                 <Text style={s.routeBtnText}>🗺️  Emergency Vehicle Route</Text>
               </TouchableOpacity>
@@ -313,8 +354,8 @@ export default function CommunityHome({ navigation }) {
         ) : cleared ? (
           <View style={s.clearedCard}>
             <Text style={s.clearedEmoji}>✅</Text>
-            <Text style={s.clearedTitle}>Path Cleared</Text>
-            <Text style={s.clearedSub}>Thank you for keeping emergency lanes clear.</Text>
+            <Text style={s.clearedTitle}>{activeAlert?.vehicleType === 'disaster' ? 'Response Logged' : 'Path Cleared'}</Text>
+            <Text style={s.clearedSub}>{activeAlert?.vehicleType === 'disaster' ? 'Thank you for volunteering.' : 'Thank you for keeping emergency lanes clear.'}</Text>
           </View>
         ) : (
           <View style={s.standbyCard}>

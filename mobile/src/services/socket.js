@@ -44,6 +44,9 @@ export function listenToEvents(handlers) {
   // Disaster response events
   socket.on('disaster:enroute', handlers.onDisasterEnroute || (() => {}));
   socket.on('disaster:arrived', handlers.onDisasterArrived || (() => {}));
+  socket.on('disaster:community_alert', handlers.onDisasterCommunityAlert || (() => {}));
+  socket.on('disaster:community_alert_broadcast', handlers.onDisasterCommunityAlert || (() => {}));
+  socket.on('disaster:team_assigned', handlers.onDisasterTeamAssigned || (() => {}));
 }
 
 export function emitDriverLocation(lat, lng) {

@@ -322,12 +322,15 @@ body {
 .map-area {
   position: relative;
   height: 100%;
+  min-height: 500px;
   overflow: hidden;
+  background: #12151f; /* Fallback color for dark map */
 }
 
 .map-area .leaflet-container {
   width: 100%;
   height: 100%;
+  min-height: 500px;
 }
 
 /* Right panel */

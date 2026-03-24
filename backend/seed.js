@@ -50,6 +50,43 @@ const demoUsers = [
     location: { lat: 11.2650, lng: 75.7850 },
     isActive: false
   },
+  // ── Rescue Team Drivers ────────────────────────────────
+  {
+    name: 'Anoop Raj — NDRF Unit 1',
+    phone: '+919000000010',
+    role: 'driver',
+    vehicleType: 'rescue',
+    vehicleNumber: 'NDRF Unit 1 Koduvally',
+    location: { lat: 11.3668, lng: 75.9090 },
+    isActive: false
+  },
+  {
+    name: 'Vipin Das — NDRF Unit 2',
+    phone: '+919000000011',
+    role: 'driver',
+    vehicleType: 'rescue',
+    vehicleNumber: 'NDRF Unit 2 Beypore',
+    location: { lat: 11.1725, lng: 75.8130 },
+    isActive: false
+  },
+  {
+    name: 'Sajan K — Rescue Unit 4',
+    phone: '+919000000012',
+    role: 'driver',
+    vehicleType: 'rescue',
+    vehicleNumber: 'Rescue Unit 4 Med College',
+    location: { lat: 11.2590, lng: 75.7710 },
+    isActive: false
+  },
+  {
+    name: 'Nikhil M — Rescue Unit 5',
+    phone: '+919000000013',
+    role: 'driver',
+    vehicleType: 'rescue',
+    vehicleNumber: 'Rescue Unit 5 Feroke',
+    location: { lat: 11.2030, lng: 75.8320 },
+    isActive: false
+  },
   {
     name: 'Arjun — Mavoor Road',
     phone: '+919000000006',

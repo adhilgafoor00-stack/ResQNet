@@ -23,6 +23,18 @@ const disasterSchema = new mongoose.Schema({
     lng: { type: Number, default: null },
     address: { type: String, default: '' }
   },
+  nearestHospital: {
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
+    name: { type: String, default: '' },
+    type: { type: String, default: '' }
+  },
+  safetyCamp: {
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
+    name: { type: String, default: '' },
+    capacity: { type: Number, default: null }
+  },
   resourceVehicles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' }],
   resourceVolunteers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   status: {
