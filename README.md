@@ -1,4 +1,4 @@
-<div align="center">
+
 
 # 🚑 ResQNet
 
@@ -25,7 +25,29 @@
   - [Prerequisites](#prerequisites)
   - [Installation & Setup](#installation--setup)
 - [Demo Credentials](#-demo-credentials)
-- [Environment Variables](#-environment-variables)
+- [Environment Variables](#-environment-variables)# ResQNet — Unified Emergency Coordination Platform
+
+> Built for Kerala, India. Built for when everything else fails.
+
+## Architecture
+```
+resqnet/
+├── backend/          Node.js + Express + MongoDB + Socket.io
+├── dispatcher-web/   React + Vite + Leaflet.js (laptop web app)
+└── mobile/           React Native + Expo (Android — all 4 roles)
+```
+
+## Demo Credentials (OTP for all: `1234`)
+
+| Role | Phone | Name |
+|------|-------|------|
+| Dispatcher | +919000000001 | Control Room — Kozhikode |
+| Driver (Ambulance) | +919000000002 | Arun Kumar |
+| Driver (Fire) | +919000000003 | Suresh Nair |
+| Driver (Rescue) | +919000000004 | Biju Thomas |
+| Driver (Police) | +919000000005 | Rajan Pillai |
+| Community | +919000000006 | Arjun — Mavoor Road |
+
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -35,9 +57,9 @@
 
 **ResQNet** is a robust, real-time emergency coordination platform designed to bridge the gap between citizens in distress, emergency responders, and dispatchers. Built specifically for high-stress scenarios where network connectivity might be limited, it ensures that every SOS call is tracked, assigned, and responded to efficiently.
 
-## 🏗 Architecture
+## 🏗 Architecture & Technical Workflow
 
-The platform consists of three main components:
+The platform consists of three main components communicating in real-time:
 
 ```mermaid
 graph TD;
@@ -46,11 +68,59 @@ graph TD;
     B <--> D[(MongoDB)];
 ```
 
-| Component | Description | Technologies |
-| :--- | :--- | :--- |
-| **Backend** | Central API and WebSocket server | Node.js, Express, MongoDB, Socket.io |
-| **Dispatcher Web** | Control room interface for managing SOS and units | React, Vite, Leaflet.js |
-| **Mobile App** | Unified app for responders, community volunteers, and citizens | React Native, Expo |
+### 1. Core Workflow
+ResQNet unifies emergency management into a single real-time ecosystem:
+- **Dispatcher**: Receives an emergency (SOS or Disaster) and logs it on the Web Panel.
+- **Auto-Routing**: The system instantly detects the nearest hospitals, medical camps, and rescue homes and attaches them to the event.
+- **Community Alert**: The moment a disaster is logged, all community app users within a 30km radius get an immediate ringing alert.
+- **Volunteer Attendance**: Community members tap "✋ I CAN ATTEND" and are instantly synced to the Dispatcher's dashboard as active rescue staff.
+- **Convoy & Traffic**: Dispatcher assigns rescue vehicles. As they move, the community app tracks their distance live, issuing escalating warnings (10km, 5km, 2km) to clear the roads.
+
+### 2. Algorithms & Decision Making
+
+**A) Haversine Formula for Geo-Spatial Calculations**
+Instead of rough coordinate matching, the backend uses the Haversine formula to calculate exact spherical distance (in kilometers) between two GPS coordinates (Earth's radius R = 6371 km). 
+- **Use Case**: Used to filter community members within a strict 30km radius for disaster invites, and to sort hospitals/camps by proximity.
+
+**B) Dynamic Threshold Escalation**
+The Community App tracks moving ambulances and dynamically escalates the alert level based on real-time distance:
+- `> 5km to 10km`: Mild Notification (Ambulance approaching).
+- `> 2km to 5km`: High Alert (Heavy vibration, ringing sound - pull over).
+- `< 2km`: Urgent Yield (Maximum vibration pulse, Code Red).
+
+**C) Phantom Feed Deduplication**
+The system uses strict event boundary isolation. Instead of creating database alerts on every GPS ping, alerts are tied to explicit Socket events (`disaster:community_alert`). This guarantees the community feed remains clean and actionable.
+
+### 3. APIs & Technology Stack
+
+**1. Overpass API (OpenStreetMap):**
+- Used in the backend to dynamically query live nearby Hospitals, Clinics, and Emergency wards based on the incident's Latitude/Longitude.
+- It searches within a 20km radius and sorts the results by Haversine distance, returning the top 3 best medical facilities in real-time.
+
+**2. Leaflet (React-Leaflet & Native WebView):**
+- Maps are rendered using CartoCDN/OSM tiles. 
+- We use web-views inside React Native for the mobile app to ensure complex Leaflet animations (like pulsating ambulance routes) render at 60fps without burdening the native thread.
+
+**3. WebSockets (Socket.io):**
+- Completely replaces HTTP polling. 
+- State is bidirectional. When a community member clicks "Attend", the socket instantly pushes their identity back to the Dispatcher Dashboard without a page refresh.
+
+### 4. How to Present at the Hackathon
+
+To win, you must sell the "Social Impact" and "Live Synchronization" aspect. 
+Here is a 4-step script for your pitch/demo:
+
+- **Step 1: The Problem (Hook)**
+  *"Every second counts. Right now, emergency vehicles lose golden minutes stuck in traffic, and willing volunteers have no unified way to respond to local disasters."*
+
+- **Step 2: The Dispatcher (Show Web)**
+  *"Watch this. An SOS comes in. Our system uses OpenStreetMap's Overpass API to instantly locate the nearest hospital and safety camp. With one click, we create a Disaster Event. Look what happens to the phone..."*
+
+- **Step 3: The Community (Show Mobile App)**
+  *"Instantly, every community member within 30km gets this ringing alert to their phone. Our social impact model invites everyday people to be heroes. I tap 'Attend' on the phone—boom, my name pops up live on the Dispatcher's screen."*
+
+- **Step 4: The Convoy (Show Live Map)**
+  *"The dispatcher starts the convoy. As the ambulance moves, the community app calculates the Haversine distance live. 10km away... 5km away... 2km—the app vibrates heavily telling citizens to clear the road. We've gamified goodness and built a unified command center that saves lives."*
 
 ## ✨ Features
 
